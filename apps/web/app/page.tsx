@@ -1,24 +1,21 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { api } from "../lib/api";
+import { useEffect, useState } from 'react';
+import FluidLanding from '../components/landing/Fluidlanding';
+import { api } from '../lib/api';
 
 export default function Home() {
-  const [status, setStatus] = useState("checking...");
+  const [status, setStatus] = useState<string>('checking...');
 
   useEffect(() => {
     api
-      .get("/health")
+      .get('/health')
       .then((res) => setStatus(res.data.health))
-      .catch(() => setStatus("backend unreachable"));
+      .catch(() => setStatus('backend unreachable'));
   }, []);
 
-  return (
-    <main style={{ padding: 40 }}>
-      <h1>Tune-In 🚀</h1>
-      <p>
-        Backend status: <b>{status}</b>
-      </p>
-    </main>
-  );
+  // Optional: keep this for debugging
+  console.log('Backend status:', status);
+
+  return <FluidLanding />;
 }
