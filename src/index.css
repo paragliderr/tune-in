@@ -1,0 +1,109 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 3%;
+    --foreground: 0 0% 95%;
+
+    --card: 0 0% 6%;
+    --card-foreground: 0 0% 95%;
+
+    --popover: 0 0% 6%;
+    --popover-foreground: 0 0% 95%;
+
+    --primary: 263 70% 58%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 263 30% 15%;
+    --secondary-foreground: 0 0% 95%;
+
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 55%;
+
+    --accent: 263 70% 58%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 14%;
+    --input: 0 0% 14%;
+    --ring: 263 70% 58%;
+
+    --radius: 0.75rem;
+
+    --glow-purple: 263 70% 58%;
+    --glow-opacity: 0.15;
+
+    --sidebar-background: 0 0% 5%;
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-primary: 263 70% 58%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 263 30% 15%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 0 0% 14%;
+    --sidebar-ring: 263 70% 58%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Space Grotesk', sans-serif;
+    overflow-x: hidden;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+@layer components {
+  .glow-purple {
+    box-shadow: 0 0 30px hsl(var(--primary) / 0.4), 
+                0 0 60px hsl(var(--primary) / 0.2);
+  }
+
+  .glow-purple-subtle {
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.3);
+  }
+
+  .text-glow {
+    text-shadow: 0 0 80px hsl(var(--primary) / 0.5),
+                 0 0 160px hsl(var(--primary) / 0.3);
+  }
+
+  .radial-glow {
+    background: radial-gradient(
+      ellipse at center,
+      hsl(var(--primary) / 0.15) 0%,
+      transparent 70%
+    );
+  }
+
+  .navbar-blur {
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    background-color: hsl(var(--background) / 0.6);
+  }
+
+  .poster-shadow {
+    box-shadow: 0 8px 32px hsl(0 0% 0% / 0.5),
+                0 2px 8px hsl(0 0% 0% / 0.3);
+  }
+}
+
+@layer utilities {
+  .tracking-cinematic {
+    letter-spacing: 0.3em;
+  }
+}
