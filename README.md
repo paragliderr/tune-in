@@ -1,73 +1,66 @@
-# Welcome to your Lovable project
+# Tune-In 🎶
 
-## Project info
+**Tune-In** is a social platform built around pop culture, hobbies, and shared interests — a place where people can discover, discuss, and connect over what they love.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+The project is currently in active development and focuses on building a strong, scalable foundation before rolling out user-facing features.
 
-## How can I edit this code?
+---
 
-There are several ways of editing your application.
+## 🌍 What is Tune-In?
 
-**Use Lovable**
+Tune-In aims to be a community-driven platform where users can:
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- Create accounts and manage profiles
+- Engage around hobbies, pop culture, and interests
+- Connect with like-minded people
+- Share and discover content in focused communities
 
-Changes made via Lovable will be committed automatically to this repo.
+Rather than being a generic social network, Tune-In is designed to revolve around **interests first**.
 
-**Use your preferred IDE**
+---
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## 🧱 Current State
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+The project currently includes:
 
-Follow these steps:
+- Backend API built with FastAPI
+- Authentication system (register & login)
+- Database integration (PostgreSQL)
+- Structured backend architecture ready for scaling
+- Frontend and backend aligned at the project level
+- Ai and Machine Learning models to build user behaviour and suggestions aligning with  similar users.
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+This stage is about **getting the core right**.
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+---
 
-# Step 3: Install the necessary dependencies.
-npm i
+## 🛠️ Tech Stack (High Level)
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
+- Backend: FastAPI
+- Database: PostgreSQL
+- Authentication: JWT-based auth
+- Frontend: Web client (under active development)
+- Ai: colab notebooks
 
-**Edit a file directly in GitHub**
+---
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## 🚧 What’s Coming Next
 
-**Use GitHub Codespaces**
+- User profiles
+- Interest-based spaces
+- Social interactions
+- Content feeds
+- Search & discovery features
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+> 🚀 Features will be added incrementally as the platform evolves.
 
-## What technologies are used for this project?
+---
 
-This project is built with:
+## 🤝 Collaboration
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+Tune-In is being developed as a collaborative project.  
+More documentation, contribution guidelines, and feature planning will follow.
 
-## How can I deploy this project?
+---
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+**More coming soon.**
