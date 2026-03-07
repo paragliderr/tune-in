@@ -9,7 +9,7 @@ const founders = [
   {
     name: "Ayush Tiwari",
     role: "Frontend & UI/UX",
-    description: "Designs the frontend and crafts every pixel of the user experience. Ayush ensures TUNE-IN feels premium, intuitive, and visually stunning.",
+    description: "Designs the frontend and crafts every pixel of the user experience, so that TUNE-IN feels premium, intuitive, and visually stunning.",
     icon: Palette,
   },
   {
