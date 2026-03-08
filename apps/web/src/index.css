@@ -10,38 +10,36 @@
     --background: 0 0% 3%;
     --foreground: 0 0% 95%;
 
-
-    
     --card: 0 0% 6%;
     --card-foreground: 0 0% 95%;
-    
+
     --popover: 0 0% 6%;
     --popover-foreground: 0 0% 95%;
-    
+
     --primary: 263 70% 58%;
     --primary-foreground: 0 0% 100%;
-    
+
     --secondary: 263 30% 15%;
     --secondary-foreground: 0 0% 95%;
-    
+
     --muted: 0 0% 12%;
     --muted-foreground: 0 0% 55%;
-    
+
     --accent: 263 70% 58%;
     --accent-foreground: 0 0% 100%;
-    
+
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 100%;
-    
+
     --border: 0 0% 14%;
     --input: 0 0% 14%;
     --ring: 263 70% 58%;
-    
+
     --radius: 0.75rem;
-    
+
     --glow-purple: 263 70% 58%;
     --glow-opacity: 0.15;
-    
+
     --sidebar-background: 0 0% 5%;
     --sidebar-foreground: 0 0% 95%;
     --sidebar-primary: 263 70% 58%;
@@ -50,10 +48,13 @@
     --sidebar-accent-foreground: 0 0% 95%;
     --sidebar-border: 0 0% 14%;
     --sidebar-ring: 263 70% 58%;
-    
+
     --color-background: hsl(var(--background));
     --color-border: hsl(var(--border));
   }
+  /* .theme {
+    --animate-aurora: aurora 8s ease-in-out infinite alternate;
+  } */
 }
 
 @layer base {
@@ -118,3 +119,27 @@
     letter-spacing: 0.3em;
   }
 }
+
+/* @theme inline {
+  @keyframes aurora {
+  0% {
+    background-position: 0% 50%;
+    transform: rotate(-5deg) scale(0.9);
+    }
+  25% {
+    background-position: 50% 100%;
+    transform: rotate(5deg) scale(1.1);
+    }
+  50% {
+    background-position: 100% 50%;
+    transform: rotate(-3deg) scale(0.95);
+    }
+  75% {
+    background-position: 50% 0%;
+    transform: rotate(3deg) scale(1.05);
+    }
+  100% {
+    background-position: 0% 50%;
+    transform: rotate(-5deg) scale(0.9);
+    }
+  } */

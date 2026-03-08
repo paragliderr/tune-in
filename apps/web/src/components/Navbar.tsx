@@ -1,4 +1,5 @@
 import { motion, useScroll, useTransform } from "framer-motion";
+import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
 import { Link } from "react-router-dom";
 
 const Navbar = () => {
@@ -9,14 +10,14 @@ const Navbar = () => {
     <motion.nav
       className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 py-5"
       style={{
-        backgroundColor: useTransform(navBg, (v) =>
-          `hsla(0, 0%, 3%, ${v * 0.85})`
+        backgroundColor: useTransform(
+          navBg,
+          (v) => `hsla(0, 0%, 3%, ${v * 0.85})`,
         ),
-        backdropFilter: useTransform(navBg, (v) =>
-          `blur(${v * 20}px)`
-        ),
+        backdropFilter: useTransform(navBg, (v) => `blur(${v * 20}px)`),
       }}
     >
+      {/* Logo */}
       <motion.div
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
@@ -26,29 +27,23 @@ const Navbar = () => {
         TUNE-IN
       </motion.div>
 
+      {/* Buttons */}
       <motion.div
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
-        className="flex items-center gap-6"
+        className="flex items-center gap-4"
       >
-        <Link
-          to="/about"
-          className="group relative px-6 py-2 rounded-full border border-primary/60 text-foreground text-sm font-medium tracking-wider uppercase overflow-hidden transition-all duration-300 hover:glow-purple-subtle hover:border-primary"
-        >
-          <span className="absolute inset-0 bg-primary origin-left scale-x-0 group-hover:scale-x-100 transition-transform duration-300 ease-out" />
-          <span className="relative z-10 group-hover:text-primary-foreground transition-colors duration-300">
+        <Link to="/about">
+          <InteractiveHoverButton className="uppercase tracking-wider text-sm px-6 py-2 rounded-full">
             About
-          </span>
+          </InteractiveHoverButton>
         </Link>
-        <Link
-          to="/login"
-          className="group relative px-6 py-2 rounded-full border border-primary/60 text-foreground text-sm font-medium tracking-wider uppercase overflow-hidden transition-all duration-300 hover:glow-purple-subtle hover:border-primary"
-        >
-          <span className="absolute inset-0 bg-primary origin-left scale-x-0 group-hover:scale-x-100 transition-transform duration-300 ease-out" />
-          <span className="relative z-10 group-hover:text-primary-foreground transition-colors duration-300">
+
+        <Link to="/login">
+          <InteractiveHoverButton className="uppercase tracking-wider text-sm px-6 py-2 rounded-full">
             Login
-          </span>
+          </InteractiveHoverButton>
         </Link>
       </motion.div>
     </motion.nav>

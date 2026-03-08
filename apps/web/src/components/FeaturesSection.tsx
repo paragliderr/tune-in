@@ -1,5 +1,7 @@
 import { motion } from "framer-motion";
 import { MagicCard } from "@/components/ui/magic-card";
+import { AuroraText } from "@/components/ui/aurora-text";
+import { WordRotate } from "@/components/ui/word-rotate";
 import { Users, MessageCircle, Compass, Sparkles } from "lucide-react";
 
 const features = [
@@ -41,13 +43,36 @@ const FeaturesSection = () => {
           transition={{ duration: 0.8 }}
           className="text-center mb-20"
         >
-          <h2 className="text-3xl md:text-5xl font-bold text-foreground font-display tracking-wide">
-            Your life, amplified.
+          <h2 className="text-5xl md:text-7xl lg:text-8xl font-bold tracking-tight font-display leading-[1.05]">
+            <span className="text-foreground">Your life, </span>
+            <AuroraText
+              speed={2}
+              className="ml-2 font-bold tracking-tight"
+              colors={["#9E7AFF", "#7928CA", "#0070F3", "#38bdf8"]}
+            >
+              amplified.
+            </AuroraText>
           </h2>
-          <p className="mt-4 text-muted-foreground text-base md:text-lg max-w-2xl mx-auto">
-            TUNE-IN is where people share what they're doing, discover new
-            hobbies, and build meaningful connections — all in one place.
-          </p>
+
+          <div className="mt-6 flex flex-col items-center text-muted-foreground text-lg md:text-xl">
+            <div className="flex items-center justify-center">
+              <span>TUNE-IN is where people share&nbsp;</span>
+
+              <span className="relative inline-block w-[26ch] text-left">
+                <WordRotate
+                  words={[
+                    "what they’re doing",
+                    "discover new hobbies",
+                    " and build meaningful connections",
+                  ]}
+                  duration={2500}
+                  className="font-semibold text-foreground whitespace-nowrap"
+                />
+              </span>
+            </div>
+
+            <span className="mt-2">— all in one place.</span>
+          </div>
         </motion.div>
 
         {/* Cards Grid */}

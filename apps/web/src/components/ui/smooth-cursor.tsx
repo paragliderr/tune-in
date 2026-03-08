@@ -1,6 +1,7 @@
-import { FC, useEffect, useRef, useState } from "react";
-import { motion, useSpring, useMotionValue } from "framer-motion";
+import { FC, useEffect, useState } from "react";
+import { motion, useSpring } from "framer-motion";
 import myPointer from "@/assets/cursors/my-pointer.svg";
+let globalMousePosition = { x: -100, y: -100 }; // offscreen initially
 
 interface Position {
   x: number;
@@ -34,7 +35,6 @@ const DefaultCursorSVG: FC = () => {
   );
 };
 
-// Pointer Cursor
 const PointerCursorSVG: FC = () => {
   return (
     <img
@@ -50,8 +50,6 @@ const PointerCursorSVG: FC = () => {
   );
 };
 
-let globalMousePosition = { x: 0, y: 0 };
-
 export function SmoothCursor({
   cursor = <DefaultCursorSVG />,
   springConfig = {
@@ -61,187 +59,69 @@ export function SmoothCursor({
     restDelta: 0.001,
   },
 }: SmoothCursorProps) {
-  const lastMousePos = useRef<Position>({ x: 0, y: 0 });
-  const velocity = useRef<Position>({ x: 0, y: 0 });
-  const lastUpdateTime = useRef(Date.now());
-  const previousAngle = useRef(0);
-  const accumulatedRotation = useRef(0);
-  const shakeCount = useRef(0);
-  const hoveredButton = useRef<HTMLElement | null>(null);
+  const cursorX = useSpring(globalMousePosition.x, springConfig);
+  const cursorY = useSpring(globalMousePosition.y, springConfig);
+  const scale = useSpring(1, {
+    damping: 35,
+    stiffness: 500,
+  });
+
   const [isPointer, setIsPointer] = useState(false);
 
-const cursorX = useSpring(globalMousePosition.x, springConfig);
-const cursorY = useSpring(globalMousePosition.y, springConfig);
-
-  const rotationRaw = useMotionValue(0);
-
-  const rotation = useSpring(rotationRaw, {
-    damping: 25,
-    stiffness: 120,
-  });
-
-  const scale = useSpring(1, {
-    ...springConfig,
-    stiffness: 500,
-    damping: 35,
-  });
-
   useEffect(() => {
-    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const handleMouseMove = (e: MouseEvent) => {
+      const { clientX, clientY } = e;
 
-    const updateVelocity = (currentPos: Position) => {
-      const currentTime = Date.now();
-      const deltaTime = currentTime - lastUpdateTime.current;
+      globalMousePosition = { x: clientX, y: clientY };
 
-      if (deltaTime > 0) {
-        velocity.current = {
-          x: (currentPos.x - lastMousePos.current.x) / deltaTime,
-          y: (currentPos.y - lastMousePos.current.y) / deltaTime,
-        };
-      }
+      cursorX.set(clientX);
+      cursorY.set(clientY);
 
-      lastUpdateTime.current = currentTime;
-      lastMousePos.current = currentPos;
-    };
-
-    const smoothMouseMove = (e: MouseEvent) => {
-      const currentPos = { x: e.clientX, y: e.clientY };
-      globalMousePosition = currentPos;
-      // Detect if cursor is over a button or link
       const target = document.elementFromPoint(
-        currentPos.x,
-        currentPos.y,
+        clientX,
+        clientY,
       ) as HTMLElement | null;
 
-      const button = target?.closest("button, a") as HTMLElement | null;
-
-      hoveredButton.current = button ?? null;
-      setIsPointer(!!button);
+      const button = target?.closest("button, a");
 
       if (button) {
+        setIsPointer(true);
         scale.set(1.15);
-
-        // fully reset rotation state
-        previousAngle.current = 0;
-        accumulatedRotation.current = 0;
-        // instantly stop spring velocity
-        rotationRaw.set(0);
       } else {
+        setIsPointer(false);
         scale.set(1);
       }
-      updateVelocity(currentPos);
-
-      const speed = Math.sqrt(
-        velocity.current.x ** 2 + velocity.current.y ** 2,
-      );
-
-      if (hoveredButton.current) {
-        const rect = hoveredButton.current.getBoundingClientRect();
-
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
-
-        // strength controls how strong magnet is (0.1 – 0.3 ideal)
-        const dx = centerX - currentPos.x;
-        const dy = centerY - currentPos.y;
-
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        // limit magnet radius (in px)
-        const maxDistance = 120;
-
-        // dynamic strength (stronger when closer)
-        const strength = Math.max(0, 1 - distance / maxDistance) * 0.25;
-
-        const magneticX = currentPos.x + dx * strength;
-        const magneticY = currentPos.y + dy * strength;
-
-        cursorX.set(magneticX);
-        cursorY.set(magneticY);
-      } else {
-        cursorX.set(currentPos.x);
-        cursorY.set(currentPos.y);
-      }
-
-
-      // 🔥 macOS-style shake detection (only when NOT hovering button)
-      if (!hoveredButton.current) {
-        if (speed > 5) {
-          shakeCount.current += 1;
-        } else {
-          shakeCount.current = Math.max(0, shakeCount.current - 1);
-        }
-
-        if (shakeCount.current > 4) {
-          scale.set(2);
-
-          if (timeout) clearTimeout(timeout);
-
-          timeout = setTimeout(() => {
-            scale.set(1);
-            shakeCount.current = 0;
-          }, 220);
-
-          return;
-        }
-      }
-
-      // Normal rotation only
-      if (!hoveredButton.current && speed > 0.1) {
-        const currentAngle =
-          Math.atan2(velocity.current.y, velocity.current.x) * (180 / Math.PI) +
-          90;
-
-        let angleDiff = currentAngle - previousAngle.current;
-        if (angleDiff > 180) angleDiff -= 360;
-        if (angleDiff < -180) angleDiff += 360;
-
-        accumulatedRotation.current += angleDiff;
-        rotationRaw.set(accumulatedRotation.current);
-        previousAngle.current = currentAngle;
-      }
-    };;;
-
-    let rafId: number;
-
-    const throttledMouseMove = (e: MouseEvent) => {
-      if (rafId) return;
-
-      rafId = requestAnimationFrame(() => {
-        smoothMouseMove(e);
-        rafId = 0;
-      });
     };
 
     document.documentElement.style.cursor = "none";
-    window.addEventListener("mousemove", throttledMouseMove);
-
-
+    window.addEventListener("mousemove", handleMouseMove);
 
     return () => {
-      window.removeEventListener("mousemove", throttledMouseMove);
+      window.removeEventListener("mousemove", handleMouseMove);
       document.documentElement.style.cursor = "auto";
-      if (rafId) cancelAnimationFrame(rafId);
-      if (timeout) clearTimeout(timeout);
     };
-  }, [cursorX, cursorY, rotation, scale]);
+  }, [cursorX, cursorY, scale]);
 
   return (
-    <motion.div
-      style={{
-        position: "fixed",
-        left: cursorX,
-        top: cursorY,
-        translateX: "-50%",
-        translateY: "-50%",
-        rotate: rotation,
-        scale,
-        pointerEvents: "none",
-        zIndex: 9999,
-        willChange: "transform",
-      }}
-    >
-      {isPointer ? <PointerCursorSVG /> : cursor}
-    </motion.div>
-  );
-}
+  <motion.div
+    style={{
+      position: "fixed",
+      left: cursorX,
+      top: cursorY,
+      scale,
+      x: -6,
+      y: -4,
+      pointerEvents: "none",
+      zIndex: 9999,
+      willChange: "transform",
+    }}
+  >
+    {isPointer ? (
+      <PointerCursorSVG />
+    ) : (
+      <motion.div style={{ rotate: -25 }}>
+        {cursor}
+      </motion.div>
+    )}
+  </motion.div>
+);}
