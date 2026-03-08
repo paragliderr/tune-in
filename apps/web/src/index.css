@@ -65,6 +65,12 @@
   html {
     scroll-behavior: auto;
   }
+
+  /* 🔥 Scoped custom cursor */
+  .custom-cursor-scope,
+  .custom-cursor-scope * {
+    cursor: none !important;
+  }
 }
 
 @layer components {

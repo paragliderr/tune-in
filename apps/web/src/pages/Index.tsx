@@ -6,13 +6,16 @@ import CTASection from "@/components/CTASection";
 import Footer from "@/components/Footer";
 import InteractiveBackground from "@/components/InteractiveBackground";
 import { useLenis } from "@/hooks/useLenis";
+import { SmoothCursor } from "../components/ui/smooth-cursor";
 
 const Index = () => {
   useLenis();
 
   return (
-    <div className="min-h-screen bg-background">
-      <InteractiveBackground />
+    <div className="min-h-screen bg-background custom-cursor-scope">
+      <SmoothCursor />
+
+      {/* <InteractiveBackground /> */}
       <Navbar />
       <HeroSection />
       <MovieGrid />
