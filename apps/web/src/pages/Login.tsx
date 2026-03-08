@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 
 import poster1 from "@/assets/poster-1.jpg";
@@ -63,6 +63,7 @@ const ScrollingColumn = ({
 const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [tab, setTab] = useState<"username" | "phone">("username");
+  const navigate = useNavigate();
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -82,13 +83,18 @@ const Login = () => {
           className="w-full max-w-md"
         >
           <div className="text-center mb-10">
-            <Link to="/" className="text-foreground text-2xl font-bold tracking-cinematic uppercase font-display">
+            <Link
+              to="/"
+              className="text-foreground text-2xl font-bold tracking-cinematic uppercase font-display"
+            >
               TUNE-IN
             </Link>
           </div>
 
           <div className="rounded-2xl border border-border bg-card/60 backdrop-blur-md p-8">
-            <h2 className="text-2xl font-bold text-foreground text-center mb-6">Login</h2>
+            <h2 className="text-2xl font-bold text-foreground text-center mb-6">
+              Login
+            </h2>
 
             {/* Tabs */}
             <div className="flex rounded-full border border-border mb-6 overflow-hidden">
@@ -122,7 +128,11 @@ const Login = () => {
                 </label>
                 <input
                   type={tab === "phone" ? "tel" : "text"}
-                  placeholder={tab === "username" ? "Enter your username" : "Enter your phone number"}
+                  placeholder={
+                    tab === "username"
+                      ? "Enter your username"
+                      : "Enter your phone number"
+                  }
                   className="w-full px-4 py-3 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-300"
                 />
               </div>
@@ -142,7 +152,11 @@ const Login = () => {
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    {showPassword ? (
+                      <EyeOff className="w-5 h-5" />
+                    ) : (
+                      <Eye className="w-5 h-5" />
+                    )}
                   </button>
                 </div>
               </div>
@@ -162,9 +176,12 @@ const Login = () => {
 
           <p className="text-center text-muted-foreground text-sm mt-6">
             Don't have an account?{" "}
-            <a href="#" className="text-foreground font-semibold hover:text-primary transition-colors">
+            <button
+              onClick={() => navigate("/onboarding")}
+              className="text-foreground font-semibold hover:text-primary transition-colors"
+            >
               Sign Up
-            </a>
+            </button>
           </p>
         </motion.div>
       </div>
