@@ -1,8 +1,14 @@
 import { motion, useScroll, useTransform } from "framer-motion";
 import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
+import { ScrollProgress } from "@/components/ui/scroll-progress";
+import { TextAnimate } from "@/components/ui/text-animate";
+import Logo from "@/assets/LOGO/Logo.svg";
+import { useLocation } from "react-router-dom";
 import { Link } from "react-router-dom";
 
 const Navbar = () => {
+  const location = useLocation();
+  const isHome = location.pathname === "/";
   const { scrollY } = useScroll();
   const navBg = useTransform(scrollY, [0, 200], [0, 1]);
 
@@ -22,9 +28,30 @@ const Navbar = () => {
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.6, ease: "easeOut" }}
-        className="text-foreground text-lg font-bold tracking-cinematic uppercase"
       >
-        TUNE-IN
+        <Link
+          to="/"
+          className="flex items-center gap-3 cursor-pointer select-none"
+        >
+          {/* SVG Logo */}
+          <img
+            src={Logo}
+            alt="TUNE-IN Logo"
+            className="h-8 md:h-9 w-auto object-contain"
+            draggable={false}
+          />
+
+          {/* Animated Text */}
+          <TextAnimate
+            animation="blurIn"
+            by="character"
+            as="span"
+            delay={0.3}
+            className="text-xl md:text-2xl font-bold tracking-cinematic uppercase"
+          >
+            tune-in
+          </TextAnimate>
+        </Link>
       </motion.div>
 
       {/* Buttons */}
@@ -46,6 +73,8 @@ const Navbar = () => {
           </InteractiveHoverButton>
         </Link>
       </motion.div>
+
+      {isHome && <ScrollProgress className="h-[2px] top-[80px] bg-primary" />}
     </motion.nav>
   );
 };

@@ -56,14 +56,16 @@ const FeaturesSection = () => {
 
           <div className="mt-6 flex flex-col items-center text-muted-foreground text-lg md:text-xl">
             <div className="flex items-center justify-center">
-              <span>TUNE-IN is where people share&nbsp;</span>
+              <span>
+                TUNE-IN is where people &nbsp;
+              </span>
 
               <span className="relative inline-block w-[26ch] text-left">
                 <WordRotate
                   words={[
-                    "what they’re doing",
+                    "share what they’re doing",
                     "discover new hobbies",
-                    " and build meaningful connections",
+                    "build meaningful connections",
                   ]}
                   duration={2500}
                   className="font-semibold text-foreground whitespace-nowrap"
