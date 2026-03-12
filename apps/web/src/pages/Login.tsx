@@ -1,7 +1,8 @@
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 import poster1 from "@/assets/poster-1.jpg";
 import poster2 from "@/assets/poster-2.jpg";
@@ -62,8 +63,41 @@ const ScrollingColumn = ({
 
 const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
-  const [tab, setTab] = useState<"username" | "phone">("username");
-  const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+ const navigate = useNavigate();
+
+ useEffect(() => {
+   const { data: listener } = supabase.auth.onAuthStateChange(
+     (event, session) => {
+       if (session) {
+         navigate("/home");
+       }
+     },
+   );
+
+   return () => listener.subscription.unsubscribe();
+ }, []);
+
+  const handleLogin = async () => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (!error) navigate("/home");
+    else alert(error.message);
+  };
+
+const handleGoogleLogin = async () => {
+  await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: `${window.location.origin}/login`,
+    },
+  });
+};
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -96,43 +130,17 @@ const Login = () => {
               Login
             </h2>
 
-            {/* Tabs */}
-            <div className="flex rounded-full border border-border mb-6 overflow-hidden">
-              <button
-                onClick={() => setTab("username")}
-                className={`flex-1 py-2.5 text-sm font-medium tracking-wider uppercase transition-all duration-300 ${
-                  tab === "username"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Username
-              </button>
-              <button
-                onClick={() => setTab("phone")}
-                className={`flex-1 py-2.5 text-sm font-medium tracking-wider uppercase transition-all duration-300 ${
-                  tab === "phone"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Phone
-              </button>
-            </div>
-
             {/* Fields */}
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium text-foreground mb-1.5 block">
-                  {tab === "username" ? "Username" : "Phone Number"}
+                  Email
                 </label>
                 <input
-                  type={tab === "phone" ? "tel" : "text"}
-                  placeholder={
-                    tab === "username"
-                      ? "Enter your username"
-                      : "Enter your phone number"
-                  }
+                  type="email"
+                  placeholder="Enter your email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   className="w-full px-4 py-3 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-300"
                 />
               </div>
@@ -145,6 +153,8 @@ const Login = () => {
                   <input
                     type={showPassword ? "text" : "password"}
                     placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                     className="w-full px-4 py-3 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all duration-300 pr-12"
                   />
                   <button
@@ -163,7 +173,10 @@ const Login = () => {
             </div>
 
             {/* Login button */}
-            <button className="w-full mt-6 py-3 rounded-full bg-primary text-primary-foreground font-medium tracking-wider uppercase text-sm hover:opacity-90 transition-all duration-300 glow-purple-subtle">
+            <button
+              onClick={handleLogin}
+              className="w-full mt-6 py-3 rounded-full bg-primary text-primary-foreground font-medium tracking-wider uppercase text-sm hover:opacity-90 transition-all duration-300 glow-purple-subtle"
+            >
               Login
             </button>
 
@@ -172,12 +185,31 @@ const Login = () => {
                 Forgot Password?
               </a>
             </p>
+
+            {/* OR divider */}
+            <div className="flex items-center gap-3 my-4">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-xs text-muted-foreground">OR</span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+
+            {/* Google login */}
+            <button
+              onClick={handleGoogleLogin}
+              className="w-full py-3 rounded-xl bg-white text-black font-medium flex items-center justify-center gap-3 hover:opacity-90 transition"
+            >
+              <img
+                src="https://www.svgrepo.com/show/475656/google-color.svg"
+                className="w-5 h-5"
+              />
+              Continue with Google
+            </button>
           </div>
 
           <p className="text-center text-muted-foreground text-sm mt-6">
             Don't have an account?{" "}
             <button
-              onClick={() => navigate("/onboarding")}
+              onClick={() => navigate("/signup")}
               className="text-foreground font-semibold hover:text-primary transition-colors"
             >
               Sign Up

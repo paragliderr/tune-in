@@ -1,7 +1,9 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useRef } from "react";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Check, Upload, User, Cpu, Music, Gamepad2, Film } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 
 const HOBBIES = [
@@ -18,22 +20,76 @@ const Onboarding = () => {
   const [step, setStep] = useState(0);
   const [username, setUsername] = useState("");
   const [usernameError, setUsernameError] = useState("");
+  const [checkingUsername, setCheckingUsername] = useState(false);
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(
+    null,
+  );
+  const [debouncedUsername, setDebouncedUsername] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [bio, setBio] = useState("");
   const [selectedHobbies, setSelectedHobbies] = useState<string[]>([]);
 
-  const handleUsernameChange = (value: string) => {
-    const clean = value.toLowerCase().replace(/[^a-z0-9_]/g, "");
-    setUsername(clean);
-    if (clean.length > 0 && clean.length < 3) {
-      setUsernameError("Username must be at least 3 characters");
-    } else if (clean.length > 20) {
-      setUsernameError("Username must be 20 characters or less");
+const handleUsernameChange = (value: string) => {
+  const clean = value.toLowerCase().replace(/[^a-z0-9_]/g, "");
+  setUsername(clean);
+  setUsernameAvailable(null);
+
+  if (clean.length > 0 && clean.length < 3) {
+    setUsernameError("Username must be at least 3 characters");
+    return;
+  }
+
+  if (clean.length > 20) {
+    setUsernameError("Username must be 20 characters or less");
+    return;
+  }
+
+  setUsernameError("");
+};
+
+useEffect(() => {
+  const t = setTimeout(() => {
+    setDebouncedUsername(username);
+  }, 500);
+
+  return () => clearTimeout(t);
+}, [username]);
+
+useEffect(() => {
+  let cancelled = false; // ⭐ VERY IMPORTANT
+
+  const check = async () => {
+    if (!debouncedUsername) return;
+    if (debouncedUsername.length < 3) return;
+
+    setCheckingUsername(true);
+
+    const { data } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("username", debouncedUsername)
+      .maybeSingle();
+
+    if (cancelled) return; // ⭐ ignore old response
+
+    if (data) {
+      setUsernameAvailable(false);
+      setUsernameError("This username already exists");
     } else {
+      setUsernameAvailable(true);
       setUsernameError("");
     }
+
+    setCheckingUsername(false);
   };
+
+  check();
+
+  return () => {
+    cancelled = true; // ⭐ cancel previous API result
+  };
+}, [debouncedUsername]);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -49,13 +105,43 @@ const Onboarding = () => {
     );
   };
 
-  const handleFinish = () => {
-    toast.success("Welcome to TUNE-IN!");
-    navigate("/home", { replace: true });
-  };
+const handleFinish = async () => {
+  if (usernameAvailable !== true) {
+    toast.error("Please choose an available username");
+    return;
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    toast.error("Session expired. Please login again.");
+    navigate("/login");
+    return;
+  }
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      username,
+      bio,
+      onboarding_completed: true,
+    })
+    .eq("id", user.id);
+
+  if (error) {
+    toast.error(error.message);
+    return;
+  }
+
+  navigate("/home", { replace: true });
+};
+
 
   const canProceed = () => {
-    if (step === 0) return username.length >= 3 && !usernameError;
+    if (step === 0)
+      return username.length >= 3 && !usernameError && usernameAvailable;
     if (step === 3) return selectedHobbies.length >= 1;
     return true;
   };
@@ -85,12 +171,30 @@ const Onboarding = () => {
           maxLength={20}
           className="w-full px-4 py-3 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
         />
-        {username.length >= 3 && !usernameError && (
+        {usernameAvailable === true && (
           <Check className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-green-500" />
         )}
+
+        {usernameAvailable === false && (
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500 font-bold">
+            ✕
+          </span>
+        )}
       </div>
-      {usernameError && (
+      {usernameAvailable === false && (
+        <p className="text-sm text-red-500 font-medium">
+          This username already exists
+        </p>
+      )}
+
+      {usernameError && usernameAvailable !== false && (
         <p className="text-sm text-destructive">{usernameError}</p>
+      )}
+
+      {checkingUsername && (
+        <p className="text-xs text-muted-foreground mt-1">
+          Checking availability...
+        </p>
       )}
     </motion.div>,
 
