@@ -13,6 +13,13 @@ const HOBBIES = [
   { id: "movies", name: "Movies & Cinema", icon: Film },
 ];
 
+const HOBBY_TO_CLUB_SLUG: Record<string, string> = {
+  tech: "tech",
+  music: "music",
+  gaming: "gaming",
+  movies: "cinema",
+};
+
 const Onboarding = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -21,6 +28,7 @@ const Onboarding = () => {
   const [username, setUsername] = useState("");
   const [usernameError, setUsernameError] = useState("");
   const [checkingUsername, setCheckingUsername] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(
     null,
   );
@@ -106,7 +114,11 @@ useEffect(() => {
   };
 
 const handleFinish = async () => {
+  if (saving) return;
+  setSaving(true);
+
   if (usernameAvailable !== true) {
+    setSaving(false);
     toast.error("Please choose an available username");
     return;
   }
@@ -116,51 +128,94 @@ const handleFinish = async () => {
   } = await supabase.auth.getUser();
 
   if (!user) {
+    setSaving(false);
     toast.error("Session expired. Please login again.");
     navigate("/login");
     return;
   }
 
-let avatarUrl: string | null = null;
+  let avatarUrl: string | null = null;
 
-// ⭐ upload avatar if selected
-if (avatarFile) {
-  const fileExt = avatarFile.name.split(".").pop();
-  const filePath = `${user.id}.${fileExt}`;
+  // ⭐ upload avatar if selected
+  if (avatarFile) {
+    const filePath = `${user.id}/avatar.png`;
 
-  const { error: uploadError } = await supabase.storage
-    .from("avatars")
-    .upload(filePath, avatarFile, {
-      upsert: true,
-    });
+    const { error: uploadError } = await supabase.storage
+      .from("avatars")
+      .upload(filePath, avatarFile, {
+        upsert: true,
+      });
 
-  if (uploadError) {
-    toast.error(uploadError.message);
-    return;
+    if (uploadError) {
+      setSaving(false);
+      toast.error(uploadError.message);
+      return;
+    }
+
+    const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
+
+    avatarUrl = data.publicUrl;
   }
 
-  const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
+const updatePayload: any = {
+  username,
+  bio,
+  onboarding_completed: true,
+};
 
-  avatarUrl = data.publicUrl;
+if (avatarUrl) {
+  updatePayload.avatar_url = avatarUrl;
 }
 
-const { error } = await supabase
+const { error: profileError } = await supabase
   .from("profiles")
-  .update({
-    username,
-    bio,
-    avatar_url: avatarUrl,
-    onboarding_completed: true,
-  })
+  .update(updatePayload)
   .eq("id", user.id);
 
-  if (error) {
-    toast.error(error.message);
+if (profileError) {
+  setSaving(false);
+  toast.error(profileError.message);
+  return;
+}
+
+  /* ⭐ AUTO JOIN CLUBS */
+
+  const clubSlugs = selectedHobbies.map((hobby) => HOBBY_TO_CLUB_SLUG[hobby]);
+
+  const { data: clubs, error: clubFetchError } = await supabase
+    .from("clubs")
+    .select("id")
+    .in("slug", clubSlugs);
+
+  if (clubFetchError) {
+    setSaving(false);
+    toast.error(clubFetchError.message);
     return;
   }
 
+  if (clubs && clubs.length > 0) {
+    const inserts = clubs.map((club) => ({
+      club_id: club.id,
+      user_id: user.id,
+    }));
+
+    const { error: joinError } = await supabase
+      .from("club_members")
+      .upsert(inserts, {
+        onConflict: "club_id,user_id",
+      });
+
+    if (joinError) {
+      setSaving(false);
+      toast.error(joinError.message);
+      return;
+    }
+  }
+
+  setSaving(false);
+
   navigate("/home", { replace: true });
-};
+};;;;
 
 
   const canProceed = () => {
@@ -398,10 +453,10 @@ const { error } = await supabase
                 if (step < 3) setStep(step + 1);
                 else handleFinish();
               }}
-              disabled={!canProceed()}
+              disabled={!canProceed() || saving}
               className="flex-1 py-3 rounded-full bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_0_20px_hsl(270_70%_60%/0.3)]"
             >
-              {step < 3 ? "Continue" : "Finish"}
+              {step < 3 ? "Continue" : saving ? "Saving..." : "Finish"}
             </button>
           </div>
         </div>
