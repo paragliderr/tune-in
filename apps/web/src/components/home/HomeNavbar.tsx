@@ -15,6 +15,7 @@ interface HomeNavbarProps {
 const HomeNavbar = ({ activeTab, onTabChange }: HomeNavbarProps) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [username, setUsername] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -26,11 +27,14 @@ const HomeNavbar = ({ activeTab, onTabChange }: HomeNavbarProps) => {
 
       const { data } = await supabase
         .from("profiles")
-        .select("username")
+        .select("username, avatar_url")
         .eq("id", user.id)
         .single();
 
-      if (data?.username) setUsername(data.username);
+      if (data) {
+        setUsername(data.username);
+        setAvatarUrl(data.avatar_url);
+      }
     };
 
     load();
@@ -78,9 +82,17 @@ const HomeNavbar = ({ activeTab, onTabChange }: HomeNavbarProps) => {
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => setDropdownOpen(!dropdownOpen)}
-          className="w-9 h-9 rounded-full border border-border bg-card/60 flex items-center justify-center text-muted-foreground hover:border-primary/50 hover:text-foreground transition-colors"
+          className="w-9 h-9 rounded-full border border-border bg-card/60 overflow-hidden flex items-center justify-center"
         >
-          <User className="w-4 h-4" />
+          {avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt="avatar"
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <User className="w-4 h-4 text-muted-foreground" />
+          )}
         </motion.button>
         <ProfileDropdown
           open={dropdownOpen}

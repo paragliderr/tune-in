@@ -121,14 +121,38 @@ const handleFinish = async () => {
     return;
   }
 
-  const { error } = await supabase
-    .from("profiles")
-    .update({
-      username,
-      bio,
-      onboarding_completed: true,
-    })
-    .eq("id", user.id);
+let avatarUrl: string | null = null;
+
+// ⭐ upload avatar if selected
+if (avatarFile) {
+  const fileExt = avatarFile.name.split(".").pop();
+  const filePath = `${user.id}.${fileExt}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("avatars")
+    .upload(filePath, avatarFile, {
+      upsert: true,
+    });
+
+  if (uploadError) {
+    toast.error(uploadError.message);
+    return;
+  }
+
+  const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
+
+  avatarUrl = data.publicUrl;
+}
+
+const { error } = await supabase
+  .from("profiles")
+  .update({
+    username,
+    bio,
+    avatar_url: avatarUrl,
+    onboarding_completed: true,
+  })
+  .eq("id", user.id);
 
   if (error) {
     toast.error(error.message);
