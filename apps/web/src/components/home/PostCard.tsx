@@ -1,9 +1,39 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ThumbsUp, ThumbsDown, MessageSquare, Bookmark } from "lucide-react";
+import {
+  ThumbsUp,
+  ThumbsDown,
+  MessageSquare,
+  Bookmark,
+  Cpu,
+  Music,
+  Film,
+  Gamepad2,
+  Sparkles,
+  Dumbbell,
+} from "lucide-react";
 import CommentThread from "./CommentThread";
 
-interface PostCardProps {
+const getClubIcon = (club: string) => {
+  switch (club.toLowerCase()) {
+    case "tech":
+      return Cpu;
+    case "music":
+      return Music;
+    case "cinema":
+      return Film;
+    case "gaming":
+      return Gamepad2;
+    case "anime":
+      return Sparkles;
+    case "fitness":
+      return Dumbbell;
+    default:
+      return Cpu;
+  }
+};
+
+interface Props {
   id: string;
   clubName: string;
   clubColor: string;
@@ -11,137 +41,120 @@ interface PostCardProps {
   time: string;
   title: string;
   content: string;
+  image?: string | null;
   likes: number;
   dislikes: number;
   commentCount: number;
-  hasImage?: boolean;
   onOpenDetail?: () => void;
 }
 
-const PostCard = ({
+export default function PostCard({
   id,
   clubName,
-  clubColor,
   username,
   time,
   title,
   content,
+  image,
   likes,
   dislikes,
   commentCount,
-  hasImage,
   onOpenDetail,
-}: PostCardProps) => {
+}: Props) {
+  const Icon = getClubIcon(clubName);
+
   const [reaction, setReaction] = useState<"like" | "dislike" | null>(null);
   const [saved, setSaved] = useState(false);
   const [showComments, setShowComments] = useState(false);
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      layout
+      initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
-      whileHover={{ scale: 1.01 }}
-      transition={{ duration: 0.3 }}
-      className="rounded-2xl border border-border bg-card/50 backdrop-blur-md p-5 transition-shadow duration-300 hover:shadow-[0_0_20px_hsl(270_70%_60%/0.08)] cursor-pointer"
+      whileHover={{ scale: 1.015 }}
+      className="max-w-2xl mx-auto rounded-2xl border border-border bg-card/60 backdrop-blur-xl p-5 cursor-pointer transition"
       onClick={(e) => {
-        // Don't open detail if clicking interactive elements
-        const target = e.target as HTMLElement;
-        if (target.closest("button")) return;
+        if ((e.target as HTMLElement).closest("button")) return;
         onOpenDetail?.();
       }}
     >
-      {/* Header */}
+      {/* header */}
       <div className="flex items-center gap-3 mb-3">
-        <div
-          className={`w-8 h-8 rounded-lg bg-gradient-to-br ${clubColor} flex items-center justify-center text-xs font-bold text-primary-foreground shrink-0`}
-        >
-          {clubName.charAt(0)}
+        <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center">
+          <Icon size={18} />
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold text-foreground">{clubName}</p>
+
+        <div>
+          <p className="text-xs font-semibold">{clubName}</p>
           <p className="text-xs text-muted-foreground">
             @{username} · {time}
           </p>
         </div>
       </div>
 
-      {/* Content */}
-      <h3 className="text-base font-semibold text-foreground mb-2">{title}</h3>
-      <p className="text-sm text-foreground/70 mb-3 leading-relaxed">
-        {content}
-      </p>
+      <h3 className="font-semibold mb-2">{title}</h3>
 
-      {hasImage && (
-        <div className="w-full aspect-video rounded-xl bg-gradient-to-br from-primary/10 to-accent/20 border border-border/30 mb-3 flex items-center justify-center">
-          <span className="text-muted-foreground text-xs">
-            Image placeholder
-          </span>
-        </div>
+      {content && (
+        <p className="text-sm text-foreground/70 mb-3 leading-relaxed">
+          {content}
+        </p>
       )}
 
-      {/* Interactions */}
+      {image && (
+        <img
+          src={image}
+          className="w-full rounded-xl mb-3 max-h-[420px] object-cover border border-border"
+        />
+      )}
+
+      {/* actions */}
       <div className="flex items-center gap-1">
         <motion.button
-          whileTap={{ scale: 1.3 }}
+          whileTap={{ scale: 1.2 }}
           onClick={() => setReaction(reaction === "like" ? null : "like")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+          className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm ${
             reaction === "like"
               ? "bg-primary/15 text-primary"
-              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+              : "text-muted-foreground hover:bg-muted/50"
           }`}
         >
-          <ThumbsUp className="w-4 h-4" />
-          <span className="text-xs font-medium">
-            {likes + (reaction === "like" ? 1 : 0)}
-          </span>
+          <ThumbsUp size={16} />
+          {likes + (reaction === "like" ? 1 : 0)}
         </motion.button>
 
         <motion.button
-          whileTap={{ scale: 1.3 }}
+          whileTap={{ scale: 1.2 }}
           onClick={() => setReaction(reaction === "dislike" ? null : "dislike")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+          className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm ${
             reaction === "dislike"
               ? "bg-destructive/15 text-destructive"
-              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+              : "text-muted-foreground hover:bg-muted/50"
           }`}
         >
-          <ThumbsDown className="w-4 h-4" />
-          <span className="text-xs font-medium">
-            {dislikes + (reaction === "dislike" ? 1 : 0)}
-          </span>
+          <ThumbsDown size={16} />
+          {dislikes + (reaction === "dislike" ? 1 : 0)}
         </motion.button>
 
         <button
           onClick={() => setShowComments(!showComments)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-            showComments
-              ? "bg-primary/10 text-primary"
-              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-          }`}
+          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:bg-muted/50"
         >
-          <MessageSquare className="w-4 h-4" />
-          <span className="text-xs font-medium">{commentCount}</span>
+          <MessageSquare size={16} />
+          {commentCount}
         </button>
 
-        <motion.button
-          whileTap={{ scale: 1.3 }}
-          onClick={() => setSaved(!saved)}
-          className={`ml-auto px-3 py-1.5 rounded-lg transition-colors ${
-            saved
-              ? "text-primary"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Bookmark className={`w-4 h-4 ${saved ? "fill-primary" : ""}`} />
-        </motion.button>
+        <button onClick={() => setSaved(!saved)} className="ml-auto px-3">
+          <Bookmark
+            size={16}
+            className={saved ? "fill-primary text-primary" : ""}
+          />
+        </button>
       </div>
 
-      {/* Comments */}
       <AnimatePresence>
         {showComments && <CommentThread postId={id} />}
       </AnimatePresence>
     </motion.div>
   );
-};
-
-export default PostCard;
+}

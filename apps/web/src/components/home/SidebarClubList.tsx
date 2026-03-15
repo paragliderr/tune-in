@@ -19,6 +19,7 @@ import {
 
 interface Club {
   id: string;
+  slug: string;
   name: string;
   members: number;
   color: string;
@@ -174,20 +175,21 @@ const SidebarClubList = ({
       counts[m.club_id] = (counts[m.club_id] || 0) + 1;
     });
 
-    const mapped =
-      joined?.map((row: any, i: number) => ({
-        id: row.clubs.id,
-        name: row.clubs.name,
-        members: counts[row.clubs.id] || 0,
-        color: getColor(i),
-        icon: row.clubs.icon,
-      })) ?? [];
+const mapped =
+  joined?.map((row: any, i: number) => ({
+    id: row.clubs.id,
+    slug: row.clubs.slug,
+    name: row.clubs.name,
+    members: counts[row.clubs.id] || 0,
+    color: getColor(i),
+    icon: row.clubs.icon,
+  })) ?? [];
 
     setJoinedClubs(mapped);
 
     const { data: allClubs } = await supabase
       .from("clubs")
-      .select("id, name, icon");
+      .select("id, slug, name, icon");
 
     const clubIds = joined?.map((j: any) => j.club_id) ?? [];
 
@@ -196,6 +198,7 @@ const SidebarClubList = ({
         ?.filter((c: any) => !clubIds.includes(c.id))
         .map((c: any, i: number) => ({
           id: c.id,
+          slug: c.slug,
           name: c.name,
           members: counts[c.id] || 0,
           color: getColor(i + 3),
@@ -323,8 +326,8 @@ const confirmLeave = async () => {
   setJoinedClubs((prev) => {
     const next = prev.filter((c) => c.id !== club.id);
 
-    if (activeClub === club.id && next.length > 0) {
-      onSelectClub(next[0].id);
+    if (activeClub === club.slug && next.length > 0) {
+      onSelectClub(next[0].slug);
     }
 
     return next;
@@ -359,8 +362,8 @@ const confirmLeave = async () => {
               <ClubItem
                 key={club.id}
                 club={club}
-                isActive={activeClub === club.id}
-                onClick={() => onSelectClub(club.id)}
+                isActive={activeClub === club.slug}
+                onClick={() => onSelectClub(club.slug)}
                 index={i}
                 onHover={(e) => {
                   const rect = e.currentTarget.getBoundingClientRect();
@@ -392,7 +395,7 @@ const confirmLeave = async () => {
               key={club.id}
               club={club}
               isActive={false}
-              onClick={() => onSelectClub(club.id)}
+              onClick={() => onSelectClub(club.slug)}
               index={i}
               isSuggested
               onJoin={() => handleJoin(club)}

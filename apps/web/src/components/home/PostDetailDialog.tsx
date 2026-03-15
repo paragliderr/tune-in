@@ -1,136 +1,117 @@
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { ThumbsUp, ThumbsDown, MessageSquare, Bookmark, X } from "lucide-react";
+import {
+  ThumbsUp,
+  ThumbsDown,
+  MessageSquare,
+  Bookmark,
+  Cpu,
+  Music,
+  Film,
+  Gamepad2,
+  Sparkles,
+  Dumbbell,
+} from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import CommentThread from "./CommentThread";
 
-interface PostDetailDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  post: {
-    id: string;
-    clubName: string;
-    clubColor: string;
-    username: string;
-    time: string;
-    title: string;
-    content: string;
-    likes: number;
-    dislikes: number;
-    commentCount: number;
-    hasImage?: boolean;
-  } | null;
-}
+const getClubIcon = (club: string) => {
+  switch (club.toLowerCase()) {
+    case "tech":
+      return Cpu;
+    case "music":
+      return Music;
+    case "cinema":
+      return Film;
+    case "gaming":
+      return Gamepad2;
+    case "anime":
+      return Sparkles;
+    case "fitness":
+      return Dumbbell;
+    default:
+      return Cpu;
+  }
+};
 
-const PostDetailDialog = ({
-  open,
-  onOpenChange,
-  post,
-}: PostDetailDialogProps) => {
+export default function PostDetailDialog({ open, onOpenChange, post }: any) {
   const [reaction, setReaction] = useState<"like" | "dislike" | null>(null);
   const [saved, setSaved] = useState(false);
 
   if (!post) return null;
 
+  const Icon = getClubIcon(post.clubName);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto bg-card/95 backdrop-blur-xl border-border/60 p-0 gap-0 rounded-2xl">
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto bg-card/95 backdrop-blur-xl border-border/60 p-0 rounded-2xl">
         <DialogTitle className="sr-only">{post.title}</DialogTitle>
 
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-card/90 backdrop-blur-md border-b border-border/40 px-6 py-4 flex items-center gap-3">
-          <div
-            className={`w-10 h-10 rounded-xl bg-gradient-to-br ${post.clubColor} flex items-center justify-center text-sm font-bold text-primary-foreground shrink-0`}
-          >
-            {post.clubName.charAt(0)}
+        {/* header */}
+        <div className="sticky top-0 z-10 bg-card/90 backdrop-blur-md border-b border-border px-6 py-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center">
+            <Icon size={18} />
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-foreground">
-              {post.clubName}
-            </p>
+
+          <div>
+            <p className="text-sm font-semibold">{post.clubName}</p>
             <p className="text-xs text-muted-foreground">
               @{post.username} · {post.time}
             </p>
           </div>
         </div>
 
-        {/* Content */}
         <div className="px-6 py-5 space-y-4">
-          <h2 className="text-xl font-bold text-foreground leading-tight">
-            {post.title}
-          </h2>
+          <h2 className="text-xl font-bold">{post.title}</h2>
+
           <p className="text-sm text-foreground/75 leading-relaxed">
             {post.content}
           </p>
 
-          {post.hasImage && (
-            <div className="w-full aspect-video rounded-xl bg-gradient-to-br from-primary/10 to-accent/20 border border-border/30 flex items-center justify-center">
-              <span className="text-muted-foreground text-xs">
-                Image placeholder
-              </span>
-            </div>
+          {post.image && (
+            <img
+              src={post.image}
+              className="w-full rounded-xl max-h-[520px] object-cover border border-border"
+            />
           )}
 
-          {/* Interactions */}
-          <div className="flex items-center gap-1 pt-2 border-t border-border/30">
-            <motion.button
-              whileTap={{ scale: 1.3 }}
+          {/* actions */}
+          <div className="flex items-center gap-1 pt-3 border-t border-border">
+            <button
               onClick={() => setReaction(reaction === "like" ? null : "like")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                reaction === "like"
-                  ? "bg-primary/15 text-primary"
-                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-              }`}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm hover:bg-muted/50"
             >
-              <ThumbsUp className="w-4 h-4" />
-              <span className="text-xs font-medium">
-                {post.likes + (reaction === "like" ? 1 : 0)}
-              </span>
-            </motion.button>
+              <ThumbsUp size={16} />
+              {post.likes}
+            </button>
 
-            <motion.button
-              whileTap={{ scale: 1.3 }}
+            <button
               onClick={() =>
                 setReaction(reaction === "dislike" ? null : "dislike")
               }
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                reaction === "dislike"
-                  ? "bg-destructive/15 text-destructive"
-                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-              }`}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm hover:bg-muted/50"
             >
-              <ThumbsDown className="w-4 h-4" />
-              <span className="text-xs font-medium">
-                {post.dislikes + (reaction === "dislike" ? 1 : 0)}
-              </span>
-            </motion.button>
+              <ThumbsDown size={16} />
+              {post.dislikes}
+            </button>
 
-            <div className="flex items-center gap-1.5 px-3 py-1.5 text-muted-foreground text-sm">
-              <MessageSquare className="w-4 h-4" />
-              <span className="text-xs font-medium">{post.commentCount}</span>
+            <div className="flex items-center gap-1 px-3 text-sm text-muted-foreground">
+              <MessageSquare size={16} />
+              {post.commentCount}
             </div>
 
-            <motion.button
-              whileTap={{ scale: 1.3 }}
-              onClick={() => setSaved(!saved)}
-              className={`ml-auto px-3 py-1.5 rounded-lg transition-colors ${
-                saved
-                  ? "text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Bookmark className={`w-4 h-4 ${saved ? "fill-primary" : ""}`} />
-            </motion.button>
+            <button onClick={() => setSaved(!saved)} className="ml-auto px-3">
+              <Bookmark
+                size={16}
+                className={saved ? "fill-primary text-primary" : ""}
+              />
+            </button>
           </div>
         </div>
 
-        {/* Comments always visible in detail view */}
-        <div className="border-t border-border/40 px-6 py-4">
+        <div className="border-t border-border px-6 py-4">
           <CommentThread postId={post.id} />
         </div>
       </DialogContent>
     </Dialog>
   );
-};
-
-export default PostDetailDialog;
+}

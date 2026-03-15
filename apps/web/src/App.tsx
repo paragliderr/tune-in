@@ -34,6 +34,14 @@ const App = () => (
               </AuthGuard>
             }
           />
+          <Route
+            path="/c/:slug"
+            element={
+              <AuthGuard>
+                <Home />
+              </AuthGuard>
+            }
+          />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
