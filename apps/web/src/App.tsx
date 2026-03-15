@@ -11,6 +11,7 @@ import Onboarding from "./pages/Onboarding";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
+import Profile from "./pages/Profile";
 
 const queryClient = new QueryClient();
 
@@ -42,6 +43,26 @@ const App = () => (
               </AuthGuard>
             }
           />
+
+          <Route
+            path="/user/:username"
+            element={
+              <AuthGuard>
+                <Profile />
+              </AuthGuard>
+            }
+          />
+
+          <Route
+            path="/c/:slug/:postId"
+            element={
+              <AuthGuard>
+                <Home />
+              </AuthGuard>
+            }
+          />
+
+          
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

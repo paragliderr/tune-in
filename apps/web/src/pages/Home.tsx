@@ -13,11 +13,22 @@ import MaintenanceScreen from "@/components/home/MaintenanceScreen";
 import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
 import CreatePostDialog from "@/components/home/CreatePostDialog";
 
+import MemberHoverCard from "@/components/home/MemberHoverCard";
+
+
 const Home = () => {
   const [activeTab, setActiveTab] = useState<HomeTab>("Clubs");
   const [activeClub, setActiveClub] = useState<string | null>(null);
-  const { slug } = useParams();
+  const { slug, postId } = useParams();
   const navigate = useNavigate();
+  
+  const [hoveredMember, setHoveredMember] = useState<any>(null);
+  useEffect(() => {
+    console.log("HOVER MEMBER STATE:", hoveredMember);
+  }, [hoveredMember]);
+
+  const [hoverRect, setHoverRect] = useState<DOMRect | null>(null);
+  const hoverTimer = useRef<any>(null);
 
   const [selectedPost, setSelectedPost] = useState<any | null>(null);
 
@@ -161,18 +172,41 @@ const Home = () => {
 
       setTimeout(() => {
         setPosts(mapped);
+        if (postId) {
+          const found = mapped.find((p) => p.id === postId);
+          if (found) setSelectedPost(found);
+        }
+
         feedCache.current[activeClub] = mapped;
         setLoadingPosts(false);
       }, 450);
 
+      // ⭐ get club id first (already fetched above as club.id)
+
+      // ⭐⭐⭐ FINAL MEMBERS LOGIC — DO NOT MODIFY ⭐⭐⭐
+
       const { data: memberRows } = await supabase
         .from("club_members")
-        .select("profiles(id, username, avatar_url)")
+        .select("user_id")
         .eq("club_id", club.id);
 
-      memberCache.current[activeClub] = memberRows ?? [];
-      setMembers(memberRows ?? []);
-    };;
+      const memberIds = memberRows?.map((m) => m.user_id) ?? [];
+
+
+      let memberProfiles: any[] = [];
+
+      if (memberIds.length > 0) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("id, username, avatar_url, bio")
+          .in("id", memberIds);
+
+        memberProfiles = data ?? [];
+      }
+
+      memberCache.current[activeClub] = memberProfiles;
+      setMembers(memberProfiles);
+    };;;;
 
     load();
   }, [activeClub]);
@@ -219,7 +253,7 @@ const Home = () => {
 
       <AnimatePresence mode="wait">
         {activeTab === "Clubs" ? (
-          <motion.div className="flex flex-1 overflow-hidden">
+          <motion.div className="flex flex-1 overflow-hidden h-[calc(100vh-64px)]">
             {/* LEFT */}
             <aside className="hidden md:flex w-72 lg:w-80 border-r border-border overflow-y-auto">
               <div className="p-4">
@@ -234,7 +268,7 @@ const Home = () => {
             </aside>
 
             {/* CENTER */}
-            <main className="flex-1 overflow-y-auto relative">
+            <main className="flex-1 h-full overflow-y-auto relative scrollbar-thin scrollbar-thumb-muted">
               {!activeClub && initialClubChecked && (
                 <div className="h-full flex items-center justify-center">
                   <div className="text-center space-y-3">
@@ -251,7 +285,7 @@ const Home = () => {
               {activeClub && (
                 <>
                   <div className="max-w-3xl mx-auto px-8 py-6 space-y-7 pb-40">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
                       <FeedFilterBar active="New" onChange={() => {}} />
                       <InteractiveHoverButton
                         onClick={() => setCreateOpen(true)}
@@ -271,12 +305,13 @@ const Home = () => {
                         <PostCard
                           key={post.id}
                           {...post}
-                          onOpenDetail={() => setSelectedPost(post)}
+                          onOpenDetail={() => {
+                            navigate(`/c/${activeClub}/${post.id}`);
+                            setSelectedPost(post);
+                          }}
                         />
                       ))}
                   </div>
-
-                  
 
                   <div className="sticky bottom-0 pointer-events-none">
                     <ProgressiveBlur height="140px" position="bottom" />
@@ -286,10 +321,14 @@ const Home = () => {
             </main>
 
             {/* RIGHT */}
-            <aside className="hidden xl:flex w-72 border-l border-border overflow-y-auto">
-              <div className="p-5 space-y-4">
-                <p className="text-sm font-semibold">Members</p>
+            <aside className="hidden xl:flex w-80 min-w-[320px] border-l border-border h-full flex-col bg-muted/20">
+              <div className="px-5 py-4 border-b border-border backdrop-blur-xl sticky top-0 bg-background/80 z-10">
+                <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+                  Members — {members.length}
+                </p>
+              </div>
 
+              <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1 scrollbar-thin scrollbar-thumb-muted">
                 {loadingPosts &&
                   Array.from({ length: 8 }).map((_, i) => (
                     <SkeletonMember key={i} />
@@ -297,15 +336,49 @@ const Home = () => {
 
                 {!loadingPosts &&
                   members.map((m: any, i) => (
-                    <div
+                    <motion.div
                       key={i}
-                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/40"
+                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{
+                        duration: 0.25,
+                        delay: i * 0.025,
+                        ease: "easeOut",
+                      }}
+                      onMouseEnter={(e) => {
+                        const rect = (
+                          e.currentTarget as HTMLElement
+                        ).getBoundingClientRect();
+
+                        clearTimeout(hoverTimer.current);
+
+                        hoverTimer.current = setTimeout(() => {
+                          setHoverRect(rect);
+                          setHoveredMember(m);
+                        }, 180);
+                      }}
+                      onMouseLeave={() => {
+                        clearTimeout(hoverTimer.current);
+                        hoverTimer.current = null;
+                        setHoveredMember(null);
+                      }}
+                      onClick={() => navigate(`/user/${m.username}`)}
+                      className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-muted/60 cursor-pointer group transition-all"
                     >
-                      <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center text-xs">
-                        {m.profiles?.username?.charAt(0)}
+                      <div className="relative">
+                        <img
+                          src={m.avatar_url}
+                          className="w-9 h-9 rounded-full object-cover"
+                        />
+
+                        {/* ⭐ aesthetic online indicator */}
+                        <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-green-500 ring-2 ring-background" />
                       </div>
-                      <p className="text-sm">{m.profiles?.username}</p>
-                    </div>
+
+                      <p className="text-sm group-hover:text-primary transition-colors">
+                        {m.username}
+                      </p>
+                    </motion.div>
                   ))}
               </div>
             </aside>
@@ -316,6 +389,12 @@ const Home = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <MemberHoverCard
+        open={!!hoveredMember}
+        anchorRect={hoverRect}
+        member={hoveredMember}
+      />
 
       <CreatePostDialog
         open={createOpen}
@@ -329,8 +408,16 @@ const Home = () => {
 
       <PostDetailDialog
         open={!!selectedPost}
-        onOpenChange={(o) => !o && setSelectedPost(null)}
+        onOpenChange={(o) => {
+          if (!o) {
+            setSelectedPost(null);
+            navigate(`/c/${activeClub}`);
+          }
+        }}
         post={selectedPost}
+        onReactionChange={() => {
+          window.dispatchEvent(new Event("reactionUpdated"));
+        }}
       />
     </div>
   );

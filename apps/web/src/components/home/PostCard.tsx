@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ThumbsUp,
@@ -13,6 +13,8 @@ import {
   Dumbbell,
 } from "lucide-react";
 import CommentThread from "./CommentThread";
+import { supabase } from "@/lib/supabase";
+import {WordRotate} from "@/components/ui/word-rotate";
 
 const getClubIcon = (club: string) => {
   switch (club.toLowerCase()) {
@@ -33,21 +35,6 @@ const getClubIcon = (club: string) => {
   }
 };
 
-interface Props {
-  id: string;
-  clubName: string;
-  clubColor: string;
-  username: string;
-  time: string;
-  title: string;
-  content: string;
-  image?: string | null;
-  likes: number;
-  dislikes: number;
-  commentCount: number;
-  onOpenDetail?: () => void;
-}
-
 export default function PostCard({
   id,
   clubName,
@@ -56,30 +43,101 @@ export default function PostCard({
   title,
   content,
   image,
-  likes,
-  dislikes,
   commentCount,
   onOpenDetail,
-}: Props) {
+}: any) {
   const Icon = getClubIcon(clubName);
 
   const [reaction, setReaction] = useState<"like" | "dislike" | null>(null);
+  const [likeCount, setLikeCount] = useState(0);
+  const [dislikeCount, setDislikeCount] = useState(0);
   const [saved, setSaved] = useState(false);
   const [showComments, setShowComments] = useState(false);
 
+  const [layoutReady, setLayoutReady] = useState(false);
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setLayoutReady(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const loadCounts = async () => {
+    const { count: likes } = await supabase
+      .from("post_reactions")
+      .select("*", { count: "exact", head: true })
+      .eq("post_id", id)
+      .eq("reaction", "like");
+
+    const { count: dislikes } = await supabase
+      .from("post_reactions")
+      .select("*", { count: "exact", head: true })
+      .eq("post_id", id)
+      .eq("reaction", "dislike");
+
+    setLikeCount(likes || 0);
+    setDislikeCount(dislikes || 0);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return;
+
+    const { data } = await supabase
+      .from("post_reactions")
+      .select("reaction")
+      .eq("post_id", id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    setReaction(data?.reaction || null);
+  };
+
+  useEffect(() => {
+    loadCounts();
+    const handler = () => loadCounts();
+    window.addEventListener("reactionUpdated", handler);
+    return () => window.removeEventListener("reactionUpdated", handler);
+  }, [id]);
+
+  const react = async (type: "like" | "dislike") => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return;
+
+    if (reaction === type) {
+      await supabase
+        .from("post_reactions")
+        .delete()
+        .eq("post_id", id)
+        .eq("user_id", user.id);
+    } else {
+      await supabase.from("post_reactions").upsert({
+        post_id: id,
+        user_id: user.id,
+        reaction: type,
+      });
+    }
+
+    await loadCounts();
+  };
+
   return (
     <motion.div
-      layout
+      layoutId={layoutReady ? `post-card-${id}` : undefined}
+      layout="position"
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
-      whileHover={{ scale: 1.015 }}
-      className="max-w-2xl mx-auto rounded-2xl border border-border bg-card/60 backdrop-blur-xl p-5 cursor-pointer transition"
+      whileHover={{ scale: 1.02 }}
+      transition={{ type: "spring", stiffness: 260, damping: 22 }}
+      className="max-w-2xl mx-auto rounded-2xl border border-border bg-card/60 backdrop-blur-xl p-5 cursor-pointer"
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("button")) return;
         onOpenDetail?.();
       }}
     >
-      {/* header */}
       <div className="flex items-center gap-3 mb-3">
         <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center">
           <Icon size={18} />
@@ -102,38 +160,61 @@ export default function PostCard({
       )}
 
       {image && (
-        <img
-          src={image}
-          className="w-full rounded-xl mb-3 max-h-[420px] object-cover border border-border"
-        />
+        <motion.div
+          layoutId={`post-image-${id}`}
+          className="relative w-full mb-3 rounded-xl overflow-hidden border border-border bg-black"
+        >
+          {/* blurred fill */}
+          <img
+            src={image}
+            className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-40"
+          />
+
+          {/* real image */}
+          <img
+            src={image}
+            className="relative w-full max-h-[520px] object-contain"
+          />
+        </motion.div>
       )}
 
-      {/* actions */}
       <div className="flex items-center gap-1">
         <motion.button
-          whileTap={{ scale: 1.2 }}
-          onClick={() => setReaction(reaction === "like" ? null : "like")}
+          whileTap={{ scale: 1.3 }}
+          animate={
+            reaction === "like"
+              ? { scale: [1, 1.3, 1], boxShadow: "0 0 20px #22c55e" }
+              : { scale: 1, boxShadow: "0 0 0px transparent" }
+          }
+          transition={{ duration: 0.28 }}
+          onClick={() => react("like")}
           className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm ${
             reaction === "like"
-              ? "bg-primary/15 text-primary"
+              ? "bg-green-500/20 text-green-400"
               : "text-muted-foreground hover:bg-muted/50"
           }`}
         >
           <ThumbsUp size={16} />
-          {likes + (reaction === "like" ? 1 : 0)}
+          <WordRotate words={[String(likeCount)]} />
         </motion.button>
 
         <motion.button
-          whileTap={{ scale: 1.2 }}
-          onClick={() => setReaction(reaction === "dislike" ? null : "dislike")}
+          whileTap={{ scale: 1.3 }}
+          animate={
+            reaction === "dislike"
+              ? { x: [0, -3, 3, -2, 2, 0], boxShadow: "0 0 20px #ef4444" }
+              : {}
+          }
+          transition={{ duration: 0.28 }}
+          onClick={() => react("dislike")}
           className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm ${
             reaction === "dislike"
-              ? "bg-destructive/15 text-destructive"
+              ? "bg-red-500/20 text-red-400"
               : "text-muted-foreground hover:bg-muted/50"
           }`}
         >
           <ThumbsDown size={16} />
-          {dislikes + (reaction === "dislike" ? 1 : 0)}
+          <WordRotate words={[String(dislikeCount)]} />
         </motion.button>
 
         <button

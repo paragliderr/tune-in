@@ -143,3 +143,30 @@
     transform: rotate(-5deg) scale(0.9);
     }
   } */
+
+  /* ===== Modern Scrollbar (Chrome / Edge / Safari) ===== */
+
+*::-webkit-scrollbar {
+  width: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(120,120,120,0.35);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(160,160,160,0.55);
+}
+
+
+/* ===== Firefox ===== */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120,120,120,0.35) transparent;
+}
