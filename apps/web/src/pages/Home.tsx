@@ -279,7 +279,7 @@ const Home = () => {
         setHoveredMember(null);
       }}
       onClick={() => navigate(`/user/${m.username}`)}
-      className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-muted/60 cursor-pointer group"
+      className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-muted/60 cursor-pointer"
     >
       <div className="relative">
         <img
@@ -305,7 +305,7 @@ const Home = () => {
 </AnimatePresence>
       </div>
 
-      <p className="text-sm group-hover:text-primary transition-colors">
+      <p className="text-sm transition-colors hover:text-primary">
         {m.username}
       </p>
     </motion.div>
