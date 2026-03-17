@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ProgressiveBlur } from "@/components/ui/progressive-blur";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
+import useGlobalPresence from "@/hooks/useGlobalPresence";
 
 import HomeNavbar, { type HomeTab } from "@/components/home/HomeNavbar";
 import SidebarClubList from "@/components/home/SidebarClubList";
@@ -12,45 +13,37 @@ import PostDetailDialog from "@/components/home/PostDetailDialog";
 import MaintenanceScreen from "@/components/home/MaintenanceScreen";
 import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
 import CreatePostDialog from "@/components/home/CreatePostDialog";
-
 import MemberHoverCard from "@/components/home/MemberHoverCard";
 
-
 const Home = () => {
+  const { onlineUserIds } = useGlobalPresence();   // ⭐ PRESENCE
+
   const [activeTab, setActiveTab] = useState<HomeTab>("Clubs");
   const [activeClub, setActiveClub] = useState<string | null>(null);
   const { slug, postId } = useParams();
   const navigate = useNavigate();
-  
-  const [hoveredMember, setHoveredMember] = useState<any>(null);
-  useEffect(() => {
-    console.log("HOVER MEMBER STATE:", hoveredMember);
-  }, [hoveredMember]);
 
+  const [hoveredMember, setHoveredMember] = useState<any>(null);
   const [hoverRect, setHoverRect] = useState<DOMRect | null>(null);
   const hoverTimer = useRef<any>(null);
 
   const [selectedPost, setSelectedPost] = useState<any | null>(null);
-
   const [posts, setPosts] = useState<any[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
-
   const [members, setMembers] = useState<any[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
-
   const [currentUsername, setCurrentUsername] = useState<string>("user");
 
   const feedCache = useRef<Record<string, any[]>>({});
   const memberCache = useRef<Record<string, any[]>>({});
-
-    const [initialClubChecked, setInitialClubChecked] = useState(false);
+  const [initialClubChecked, setInitialClubChecked] = useState(false);
 
   /* url sync */
   useEffect(() => {
     if (slug) setActiveClub(slug);
   }, [slug]);
 
-  /* ⭐ auto select first club (TS SAFE) */
+  /* auto select first club */
   useEffect(() => {
     const pickFirstClub = async () => {
       if (slug) return;
@@ -101,7 +94,6 @@ const Home = () => {
     loadUser();
   }, []);
 
-  /* optimistic */
   const addOptimisticPost = (post: any) => {
     setPosts((prev) => [post, ...prev]);
 
@@ -113,17 +105,16 @@ const Home = () => {
     }
   };
 
-  /* LOAD POSTS */
+  /* LOAD POSTS + MEMBERS */
   useEffect(() => {
     if (!activeClub) return;
 
     const load = async () => {
-      // always show skeleton briefly on switch
       setLoadingPosts(true);
 
       if (feedCache.current[activeClub]) {
-        setPosts([]); // clear old feed → skeleton visible
-        setMembers([]); // skeleton members
+        setPosts([]);
+        setMembers([]);
       }
 
       const { data: club } = await supabase
@@ -181,17 +172,12 @@ const Home = () => {
         setLoadingPosts(false);
       }, 450);
 
-      // ⭐ get club id first (already fetched above as club.id)
-
-      // ⭐⭐⭐ FINAL MEMBERS LOGIC — DO NOT MODIFY ⭐⭐⭐
-
       const { data: memberRows } = await supabase
         .from("club_members")
         .select("user_id")
         .eq("club_id", club.id);
 
       const memberIds = memberRows?.map((m) => m.user_id) ?? [];
-
 
       let memberProfiles: any[] = [];
 
@@ -206,12 +192,12 @@ const Home = () => {
 
       memberCache.current[activeClub] = memberProfiles;
       setMembers(memberProfiles);
-    };;;;
+    };
 
     load();
   }, [activeClub]);
 
-  /* realtime (TS SAFE) */
+  /* realtime posts */
   useEffect(() => {
     const channel = supabase.channel("realtime-posts");
 
@@ -231,6 +217,51 @@ const Home = () => {
       supabase.removeChannel(channel);
     };
   }, [activeClub]);
+
+  /* ⭐ PRESENCE SORTING */
+  const onlineMembers = members
+    .filter((m) => onlineUserIds.has(m.id))
+    .sort((a, b) => a.username.localeCompare(b.username));
+
+  const offlineMembers = members
+    .filter((m) => !onlineUserIds.has(m.id))
+    .sort((a, b) => a.username.localeCompare(b.username));
+
+  const MemberRow = ({ m, online }: any) => (
+    <motion.div
+      initial={{ opacity: 0, y: 8, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.25, ease: "easeOut" }}
+      onMouseEnter={(e) => {
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        clearTimeout(hoverTimer.current);
+        hoverTimer.current = setTimeout(() => {
+          setHoverRect(rect);
+          setHoveredMember(m);
+        }, 180);
+      }}
+      onMouseLeave={() => {
+        clearTimeout(hoverTimer.current);
+        setHoveredMember(null);
+      }}
+      onClick={() => navigate(`/user/${m.username}`)}
+      className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-muted/60 cursor-pointer group"
+    >
+      <div className="relative">
+        <img
+          src={m.avatar_url}
+          className="w-9 h-9 rounded-full object-cover"
+        />
+        {online && (
+          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-green-500 ring-2 ring-background" />
+        )}
+      </div>
+
+      <p className="text-sm group-hover:text-primary transition-colors">
+        {m.username}
+      </p>
+    </motion.div>
+  );
 
   const SkeletonPost = () => (
     <div className="rounded-xl border border-border p-5 space-y-3 animate-pulse">
@@ -254,6 +285,7 @@ const Home = () => {
       <AnimatePresence mode="wait">
         {activeTab === "Clubs" ? (
           <motion.div className="flex flex-1 overflow-hidden h-[calc(100vh-64px)]">
+
             {/* LEFT */}
             <aside className="hidden md:flex w-72 lg:w-80 border-r border-border overflow-y-auto">
               <div className="p-4">
@@ -328,60 +360,38 @@ const Home = () => {
                 </p>
               </div>
 
-              <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1 scrollbar-thin scrollbar-thumb-muted">
+              <div className="flex-1 overflow-y-auto px-3 py-4 space-y-3 scrollbar-thin scrollbar-thumb-muted">
                 {loadingPosts &&
                   Array.from({ length: 8 }).map((_, i) => (
                     <SkeletonMember key={i} />
                   ))}
 
-                {!loadingPosts &&
-                  members.map((m: any, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      transition={{
-                        duration: 0.25,
-                        delay: i * 0.025,
-                        ease: "easeOut",
-                      }}
-                      onMouseEnter={(e) => {
-                        const rect = (
-                          e.currentTarget as HTMLElement
-                        ).getBoundingClientRect();
-
-                        clearTimeout(hoverTimer.current);
-
-                        hoverTimer.current = setTimeout(() => {
-                          setHoverRect(rect);
-                          setHoveredMember(m);
-                        }, 180);
-                      }}
-                      onMouseLeave={() => {
-                        clearTimeout(hoverTimer.current);
-                        hoverTimer.current = null;
-                        setHoveredMember(null);
-                      }}
-                      onClick={() => navigate(`/user/${m.username}`)}
-                      className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-muted/60 cursor-pointer group transition-all"
-                    >
-                      <div className="relative">
-                        <img
-                          src={m.avatar_url}
-                          className="w-9 h-9 rounded-full object-cover"
-                        />
-
-                        {/* ⭐ aesthetic online indicator */}
-                        <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-green-500 ring-2 ring-background" />
-                      </div>
-
-                      <p className="text-sm group-hover:text-primary transition-colors">
-                        {m.username}
+                {!loadingPosts && (
+                  <>
+                    <div>
+                      <p className="text-[11px] px-2 mb-2 text-muted-foreground uppercase tracking-wider font-semibold">
+                        Online — {onlineMembers.length}
                       </p>
-                    </motion.div>
-                  ))}
+
+                      {onlineMembers.map((m) => (
+                        <MemberRow key={m.id} m={m} online />
+                      ))}
+                    </div>
+
+                    <div className="pt-3">
+                      <p className="text-[11px] px-2 mb-2 text-muted-foreground uppercase tracking-wider font-semibold">
+                        Offline — {offlineMembers.length}
+                      </p>
+
+                      {offlineMembers.map((m) => (
+                        <MemberRow key={m.id} m={m} />
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             </aside>
+
           </motion.div>
         ) : (
           <motion.div className="flex-1 flex">
