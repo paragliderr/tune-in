@@ -18,6 +18,10 @@ import MemberHoverCard from "@/components/home/MemberHoverCard";
 const Home = () => {
   const { onlineUserIds } = useGlobalPresence();   // ⭐ PRESENCE
 
+  const prevOnlineRef = useRef<Set<string>>(new Set());
+  const justChangedRef = useRef<Set<string>>(new Set());
+  const consumedAnimRef = useRef<Set<string>>(new Set());
+
   const [activeTab, setActiveTab] = useState<HomeTab>("Clubs");
   const [activeClub, setActiveClub] = useState<string | null>(null);
   const { slug, postId } = useParams();
@@ -42,6 +46,24 @@ const Home = () => {
   useEffect(() => {
     if (slug) setActiveClub(slug);
   }, [slug]);
+
+  useEffect(() => {
+  const prev = prevOnlineRef.current;
+  const now = onlineUserIds;
+
+  const changed = new Set<string>();
+
+  now.forEach((id) => {
+    if (!prev.has(id)) changed.add(id);
+  });
+
+  prev.forEach((id) => {
+    if (!now.has(id)) changed.add(id);
+  });
+
+  justChangedRef.current = changed;
+  prevOnlineRef.current = new Set(now);
+}, [onlineUserIds]);
 
   /* auto select first club */
   useEffect(() => {
@@ -227,11 +249,23 @@ const Home = () => {
     .filter((m) => !onlineUserIds.has(m.id))
     .sort((a, b) => a.username.localeCompare(b.username));
 
-  const MemberRow = ({ m, online }: any) => (
+  const MemberRow = ({ m, online }: any) => {
+  const changed = justChangedRef.current.has(m.id);
+  const shouldAnimate =
+    changed && !consumedAnimRef.current.has(m.id);
+
+  if (shouldAnimate) consumedAnimRef.current.add(m.id);
+
+  return (
     <motion.div
-      initial={{ opacity: 0, y: 8, scale: 0.96 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.25, ease: "easeOut" }}
+      layout="position"
+      initial={false}
+      animate={
+        shouldAnimate
+          ? { opacity: [0, 1], x: [-14, 0], scale: [0.96, 1] }
+          : { opacity: 1, x: 0, scale: 1 }
+      }
+      transition={{ type: "spring", stiffness: 260, damping: 22 }}
       onMouseEnter={(e) => {
         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
         clearTimeout(hoverTimer.current);
@@ -252,9 +286,23 @@ const Home = () => {
           src={m.avatar_url}
           className="w-9 h-9 rounded-full object-cover"
         />
-        {online && (
-          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-green-500 ring-2 ring-background" />
-        )}
+
+        <AnimatePresence>
+  {online && (
+    <motion.span
+      key="online-dot"
+      initial={shouldAnimate ? { scale: 0 } : false}
+      animate={
+  shouldAnimate
+    ? { scale: [0, 1.25, 1], opacity: [0.6, 1] }
+    : { scale: 1 }
+}
+      exit={{ scale: 0 }}
+      transition={{ type: "spring", stiffness: 400, damping: 18 }}
+      className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-green-500 ring-2 ring-background shadow-[0_0_8px_rgba(34,197,94,0.9)]"
+    />
+  )}
+</AnimatePresence>
       </div>
 
       <p className="text-sm group-hover:text-primary transition-colors">
@@ -262,6 +310,7 @@ const Home = () => {
       </p>
     </motion.div>
   );
+};
 
   const SkeletonPost = () => (
     <div className="rounded-xl border border-border p-5 space-y-3 animate-pulse">
