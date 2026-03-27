@@ -218,7 +218,10 @@ export default function PostCard({
         </motion.button>
 
         <button
-          onClick={() => setShowComments(!showComments)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenDetail?.();
+          }}
           className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:bg-muted/50"
         >
           <MessageSquare size={16} />
@@ -233,9 +236,7 @@ export default function PostCard({
         </button>
       </div>
 
-      <AnimatePresence>
-        {showComments && <CommentThread postId={id} />}
-      </AnimatePresence>
+      
     </motion.div>
   );
 }
