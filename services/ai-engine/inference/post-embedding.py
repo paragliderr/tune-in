@@ -15,7 +15,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 print("Loading NLP Model (e5-small-v2)...")
 nlp_model = SentenceTransformer('intfloat/e5-small-v2')
 
-# 4. Shrinking Layer (384 -> 128)
+# Shrinking Layer (384 -> 128)
 class PostTowerCompressor(nn.Module):
     def __init__(self):
         super().__init__()
