@@ -39,6 +39,7 @@ const getColor = (i: number) => COLORS[i % COLORS.length];
 interface SidebarClubListProps {
   activeClub: string | null;
   onSelectClub: (id: string) => void;
+  onGoHome?: () => void;
 }
 
 const ClubItem = ({
@@ -116,6 +117,7 @@ const ClubItem = ({
 const SidebarClubList = ({
   activeClub,
   onSelectClub,
+  onGoHome,
 }: SidebarClubListProps) => {
   const [joinedClubs, setJoinedClubs] = useState<Club[]>([]);
   const [suggestedClubs, setSuggestedClubs] = useState<Club[]>([]);
@@ -346,6 +348,28 @@ const confirmLeave = async () => {
   return (
     <div ref={sidebarRef} className="flex flex-col gap-3 h-full relative">
       <SearchBar />
+
+      {/* Home / Trending button */}
+      <motion.button
+        whileHover={{ scale: 1.015 }}
+        whileTap={{ scale: 0.98 }}
+        onClick={() => onGoHome?.()}
+        className={`w-full flex items-center gap-3.5 px-3 py-3 rounded-xl border transition-all duration-300 ${
+          activeClub === null
+            ? "border-primary bg-primary/10 shadow-[0_0_15px_hsl(270_70%_60%/0.15)]"
+            : "border-transparent bg-card/30 hover:border-primary/20 hover:bg-card/50"
+        }`}
+      >
+        <div className="w-11 h-11 rounded-xl bg-black border border-white/10 flex items-center justify-center shrink-0">
+          <Icons.Flame className="w-5 h-5 text-white opacity-90" />
+        </div>
+        <div className="flex-1 text-left min-w-0">
+          <p className="text-[15px] font-medium text-foreground truncate">Home</p>
+          <p className="text-[12px] text-muted-foreground mt-0.5">Trending across all clubs</p>
+        </div>
+      </motion.button>
+
+      <div className="h-px bg-border/50 mx-1" />
 
       <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold px-1 mt-1">
         Your Clubs

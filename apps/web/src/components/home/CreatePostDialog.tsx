@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { createPostViaApi } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -15,7 +16,6 @@ interface Props {
   onOpenChange: (v: boolean) => void;
   clubSlug: string | null;
   onCreated: () => void;
-  onOptimisticPost: (post: any) => void;
 }
 
 export default function CreatePostDialog({
@@ -23,7 +23,6 @@ export default function CreatePostDialog({
   onOpenChange,
   clubSlug,
   onCreated,
-  onOptimisticPost,
 }: Props) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -63,22 +62,6 @@ export default function CreatePostDialog({
         .eq("slug", clubSlug)
         .single();
 
-      /* ⭐ OPTIMISTIC */
-      onOptimisticPost({
-        id: "optimistic-" + Date.now(),
-        clubName: club?.name ?? clubSlug,
-        clubColor: "from-purple-600 to-indigo-700",
-        username: "you",
-        time: "just now",
-        title,
-        content,
-        image: file ? URL.createObjectURL(file) : null,
-        likes: 0,
-        dislikes: 0,
-        commentCount: 0,
-        hasImage: !!file,
-      });
-
       let image_url: string | null = null;
 
       if (file && user) {
@@ -94,16 +77,16 @@ export default function CreatePostDialog({
         image_url = data.publicUrl;
       }
 
-      await supabase.from("posts").insert({
-        club_id: club?.id,
-        user_id: user?.id,
+      if (!user?.id || !club?.id) {
+        throw new Error("Missing user or club");
+      }
+
+      await createPostViaApi({
         title,
         content,
+        club_id: club.id,
+        user_id: user.id,
         image_url,
-        like_count: 0,
-        dislike_count: 0,
-        comment_count: 0,
-        created_at: new Date().toISOString(), // ⭐⭐⭐ VERY IMPORTANT
       });
 
       toast.success("Post created 🚀");

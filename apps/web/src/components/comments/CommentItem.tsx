@@ -81,21 +81,47 @@ export default function CommentItem({ comment }: any) {
 
     if (!user) return;
 
+    // Optimistic update
+    const prevReaction = reaction;
+    const prevLikes = likes;
+    const prevDislikes = dislikes;
+
     if (reaction === type) {
-      await supabase
-        .from("comment_reactions")
-        .delete()
-        .eq("comment_id", comment.id)
-        .eq("user_id", user.id);
+      setReaction(null);
+      if (type === "like") setLikes((c) => Math.max(0, c - 1));
+      else setDislikes((c) => Math.max(0, c - 1));
     } else {
-      await supabase.from("comment_reactions").upsert({
-        comment_id: comment.id,
-        user_id: user.id,
-        reaction: type,
-      });
+      if (reaction === "like") setLikes((c) => Math.max(0, c - 1));
+      if (reaction === "dislike") setDislikes((c) => Math.max(0, c - 1));
+      setReaction(type);
+      if (type === "like") setLikes((c) => c + 1);
+      else setDislikes((c) => c + 1);
     }
 
-    await loadCounts();
+    try {
+      if (prevReaction === type) {
+        await supabase
+          .from("comment_reactions")
+          .delete()
+          .eq("comment_id", comment.id)
+          .eq("user_id", user.id);
+      } else {
+        await supabase.from("comment_reactions").upsert(
+          {
+            comment_id: comment.id,
+            user_id: user.id,
+            reaction: type,
+          },
+          { onConflict: "comment_id,user_id" },
+        );
+      }
+
+      await loadCounts();
+    } catch {
+      setReaction(prevReaction);
+      setLikes(prevLikes);
+      setDislikes(prevDislikes);
+    }
   };
 
   const reply = async () => {

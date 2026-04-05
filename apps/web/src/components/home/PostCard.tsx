@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import CommentThread from "./CommentThread";
 import { supabase } from "@/lib/supabase";
+import { trackFeedLike } from "@/lib/api";
 import {WordRotate} from "@/components/ui/word-rotate";
 
 const getClubIcon = (club: string) => {
@@ -107,21 +108,58 @@ export default function PostCard({
 
     if (!user) return;
 
+    // Optimistic update
+    const prevReaction = reaction;
+    const prevLikes = likeCount;
+    const prevDislikes = dislikeCount;
+
     if (reaction === type) {
-      await supabase
-        .from("post_reactions")
-        .delete()
-        .eq("post_id", id)
-        .eq("user_id", user.id);
+      // Toggling off
+      setReaction(null);
+      if (type === "like") setLikeCount((c) => Math.max(0, c - 1));
+      else setDislikeCount((c) => Math.max(0, c - 1));
     } else {
-      await supabase.from("post_reactions").upsert({
-        post_id: id,
-        user_id: user.id,
-        reaction: type,
-      });
+      // Switching or setting new
+      if (reaction === "like") setLikeCount((c) => Math.max(0, c - 1));
+      if (reaction === "dislike") setDislikeCount((c) => Math.max(0, c - 1));
+      setReaction(type);
+      if (type === "like") setLikeCount((c) => c + 1);
+      else setDislikeCount((c) => c + 1);
     }
 
-    await loadCounts();
+    try {
+      if (prevReaction === type) {
+        await supabase
+          .from("post_reactions")
+          .delete()
+          .eq("post_id", id)
+          .eq("user_id", user.id);
+      } else {
+        await supabase.from("post_reactions").upsert(
+          {
+            post_id: id,
+            user_id: user.id,
+            reaction: type,
+          },
+          { onConflict: "post_id,user_id" },
+        );
+        if (
+          type === "like" &&
+          typeof id === "string" &&
+          !id.startsWith("optimistic-")
+        ) {
+          void trackFeedLike(user.id, id);
+        }
+      }
+
+      // Re-sync with server to ensure consistency
+      await loadCounts();
+    } catch {
+      // Rollback on error
+      setReaction(prevReaction);
+      setLikeCount(prevLikes);
+      setDislikeCount(prevDislikes);
+    }
   };
 
   return (
@@ -167,7 +205,7 @@ export default function PostCard({
           {/* blurred fill */}
           <img
             src={image}
-            className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-40"
+            className="absolute inset-0 w-full h-full object-cover blur-sm scale-105 opacity-15"
           />
 
           {/* real image */}
@@ -186,7 +224,7 @@ export default function PostCard({
               ? { scale: [1, 1.3, 1], boxShadow: "0 0 20px #22c55e" }
               : { scale: 1, boxShadow: "0 0 0px transparent" }
           }
-          transition={{ duration: 0.28 }}
+          transition={{ duration: 0.15 }}
           onClick={() => react("like")}
           className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm ${
             reaction === "like"
@@ -205,7 +243,7 @@ export default function PostCard({
               ? { x: [0, -3, 3, -2, 2, 0], boxShadow: "0 0 20px #ef4444" }
               : {}
           }
-          transition={{ duration: 0.28 }}
+          transition={{ duration: 0.15 }}
           onClick={() => react("dislike")}
           className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm ${
             reaction === "dislike"

@@ -3,6 +3,15 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ProgressiveBlur } from "@/components/ui/progressive-blur";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
+import { fetchTrendingFeed } from "@/lib/api";
+import { mapFeedRowsToPostCards } from "@/lib/feedMap";
+import {
+  isTopByLikesFilter,
+  minCreatedAtIsoForTopFilter,
+  type ClubFeedSortFilter,
+} from "@/lib/clubFeed";
+import { rankPostsByLiveLikes } from "@/lib/rankPostsByLikes";
+import { toast } from "sonner";
 import useGlobalPresence from "@/hooks/useGlobalPresence";
 
 import HomeNavbar, { type HomeTab } from "@/components/home/HomeNavbar";
@@ -36,11 +45,12 @@ const Home = () => {
   const [loadingPosts, setLoadingPosts] = useState(false);
   const [members, setMembers] = useState<any[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
-  const [currentUsername, setCurrentUsername] = useState<string>("user");
+  const [feedFilter, setFeedFilter] = useState("Trending");
+  const [feedNonce, setFeedNonce] = useState(0);
 
   const feedCache = useRef<Record<string, any[]>>({});
   const memberCache = useRef<Record<string, any[]>>({});
-  const [initialClubChecked, setInitialClubChecked] = useState(false);
+  const [initialLoaded, setInitialLoaded] = useState(false);
 
   /* url sync */
   useEffect(() => {
@@ -65,134 +75,29 @@ const Home = () => {
   prevOnlineRef.current = new Set(now);
 }, [onlineUserIds]);
 
-  /* auto select first club */
+  /* mark initial load done (no auto-club-select — reddit style) */
   useEffect(() => {
-    const pickFirstClub = async () => {
-      if (slug) return;
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) return;
-
-      const { data } = await supabase
-        .from("club_members")
-        .select("clubs!inner(slug)")
-        .eq("user_id", user.id)
-        .limit(1);
-
-      const first: any = data?.[0];
-
-      if (first?.clubs?.slug) {
-        setActiveClub(first.clubs.slug);
-        navigate(`/c/${first.clubs.slug}`, { replace: true });
-      }
-
-      setInitialClubChecked(true);
-    };
-
-    pickFirstClub();
+    setInitialLoaded(true);
   }, []);
 
-  /* username */
+  /* LOAD MEMBERS (current club) */
   useEffect(() => {
-    const loadUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) return;
-
-      const { data } = await supabase
-        .from("profiles")
-        .select("username")
-        .eq("id", user.id)
-        .single();
-
-      if (data?.username) setCurrentUsername(data.username);
-    };
-
-    loadUser();
-  }, []);
-
-  const addOptimisticPost = (post: any) => {
-    setPosts((prev) => [post, ...prev]);
-
-    if (activeClub) {
-      feedCache.current[activeClub] = [
-        post,
-        ...(feedCache.current[activeClub] || []),
-      ];
+    if (!activeClub) {
+      setMembers([]);
+      return;
     }
-  };
 
-  /* LOAD POSTS + MEMBERS */
-  useEffect(() => {
-    if (!activeClub) return;
-
-    const load = async () => {
-      setLoadingPosts(true);
-
-      if (feedCache.current[activeClub]) {
-        setPosts([]);
-        setMembers([]);
-      }
-
+    const loadMembers = async () => {
       const { data: club } = await supabase
         .from("clubs")
-        .select("id, name")
+        .select("id")
         .eq("slug", activeClub)
         .single();
 
       if (!club) {
-        setPosts([]);
-        setLoadingPosts(false);
+        setMembers([]);
         return;
       }
-
-      const { data: postRows } = await supabase
-        .from("posts")
-        .select("*")
-        .eq("club_id", club.id)
-        .order("created_at", { ascending: false })
-        .limit(50);
-
-      const userIds = postRows?.map((p) => p.user_id) ?? [];
-
-      const { data: profileRows } = await supabase
-        .from("profiles")
-        .select("id, username")
-        .in("id", userIds);
-
-      const usernameMap: any = {};
-      profileRows?.forEach((p) => (usernameMap[p.id] = p.username));
-
-      const mapped =
-        postRows?.map((p) => ({
-          id: p.id,
-          clubName: club.name,
-          clubColor: "from-purple-600 to-indigo-700",
-          username: usernameMap[p.user_id] || "user",
-          time: new Date(p.created_at).toLocaleString(),
-          title: p.title,
-          content: p.content,
-          image: p.image_url,
-          likes: p.like_count,
-          dislikes: p.dislike_count,
-          commentCount: p.comment_count,
-        })) ?? [];
-
-      setTimeout(() => {
-        setPosts(mapped);
-        if (postId) {
-          const found = mapped.find((p) => p.id === postId);
-          if (found) setSelectedPost(found);
-        }
-
-        feedCache.current[activeClub] = mapped;
-        setLoadingPosts(false);
-      }, 450);
 
       const { data: memberRows } = await supabase
         .from("club_members")
@@ -200,7 +105,6 @@ const Home = () => {
         .eq("club_id", club.id);
 
       const memberIds = memberRows?.map((m) => m.user_id) ?? [];
-
       let memberProfiles: any[] = [];
 
       if (memberIds.length > 0) {
@@ -216,8 +120,217 @@ const Home = () => {
       setMembers(memberProfiles);
     };
 
-    load();
+    loadMembers();
   }, [activeClub]);
+
+  /* LOAD POSTS: Trending = in-house ML API; Top * = likes in window; New = newest first */
+  useEffect(() => {
+    let cancelled = false;
+    let finishTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = (cacheKey: string, mapped: any[]) => {
+      finishTimer = setTimeout(() => {
+        if (cancelled) return;
+        setPosts(mapped);
+        if (postId) {
+          const found = mapped.find((p) => p.id === postId);
+          if (found) setSelectedPost(found);
+        }
+        feedCache.current[cacheKey] = mapped;
+        setLoadingPosts(false);
+      }, 450);
+    };
+
+    const mapClubRows = (
+      postRows: any[] | null | undefined,
+      clubName: string,
+      clubSlug: string,
+      usernameMap: Record<string, string | undefined>,
+    ) =>
+      (postRows ?? []).map((p) => ({
+        id: p.id,
+        clubSlug,
+        clubName,
+        clubColor: "from-purple-600 to-indigo-700",
+        username: usernameMap[p.user_id] || "user",
+        time: new Date(p.created_at).toLocaleString(),
+        title: p.title,
+        content: p.content,
+        image: p.image_url,
+        likes: p.like_count,
+        dislikes: p.dislike_count,
+        commentCount: p.comment_count,
+      }));
+
+    const loadTrending = async () => {
+      setLoadingPosts(true);
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setPosts([]);
+        setLoadingPosts(false);
+        return;
+      }
+
+      const cacheKey = activeClub
+        ? `__trending__::${activeClub}`
+        : `__trending_home__::${user.id}`;
+
+      // Helper: Supabase-only fallback (sorted by likes)
+      const loadFallbackTrending = async () => {
+        let query = supabase
+          .from("posts")
+          .select("*")
+          .order("like_count", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(30);
+
+        if (activeClub) {
+          // Club-scoped trending
+          const { data: club } = await supabase
+            .from("clubs")
+            .select("id")
+            .eq("slug", activeClub)
+            .single();
+
+          if (club) {
+            query = query.eq("club_id", club.id);
+          }
+        } else {
+          // Home trending: scope to user's clubs
+          const { data: memberships } = await supabase
+            .from("club_members")
+            .select("club_id")
+            .eq("user_id", user.id);
+
+          const clubIds = memberships?.map((m) => m.club_id) ?? [];
+          if (!clubIds.length) {
+            finish(cacheKey, []);
+            return;
+          }
+          query = query.in("club_id", clubIds);
+        }
+
+        const { data: postRows } = await query;
+        const mapped = await mapFeedRowsToPostCards(supabase, postRows ?? []);
+        finish(cacheKey, mapped);
+      };
+
+      if (activeClub) {
+        // Club-scoped trending: use direct DB sort (fast + reliable)
+        await loadFallbackTrending();
+      } else {
+        // Home page: try ML personalization, fall back to DB sort
+        try {
+          const result = await fetchTrendingFeed(user.id, 30);
+          const raw = (result.feed ?? []) as Record<string, unknown>[];
+          if (!raw.length && result.message) {
+            toast.message(result.message);
+          }
+          if (raw.length) {
+            const mapped = await mapFeedRowsToPostCards(supabase, raw);
+            finish(cacheKey, mapped);
+          } else {
+            await loadFallbackTrending();
+          }
+        } catch (e) {
+          console.error("ML trending failed, using fallback:", e);
+          try {
+            await loadFallbackTrending();
+          } catch {
+            setPosts([]);
+            setLoadingPosts(false);
+          }
+        }
+      }
+    };
+
+    const loadClubFeed = async () => {
+      if (!activeClub) return;
+
+      setLoadingPosts(true);
+
+      const cacheKey = `${activeClub}::${feedFilter}`;
+
+      const { data: club } = await supabase
+        .from("clubs")
+        .select("id, name")
+        .eq("slug", activeClub)
+        .single();
+
+      if (!club) {
+        setPosts([]);
+        setLoadingPosts(false);
+        return;
+      }
+
+      let query = supabase.from("posts").select("*").eq("club_id", club.id);
+
+      if (feedFilter === "New") {
+        query = query.order("created_at", { ascending: false }).limit(50);
+      } else if (isTopByLikesFilter(feedFilter)) {
+        const since = minCreatedAtIsoForTopFilter(feedFilter as ClubFeedSortFilter);
+        if (since) {
+          query = query.gte("created_at", since).limit(1000);
+        } else {
+          query = query
+            .order("like_count", { ascending: false, nullsFirst: false })
+            .order("created_at", { ascending: false })
+            .limit(500);
+        }
+      } else {
+        query = query.order("created_at", { ascending: false }).limit(50);
+      }
+
+      const { data: rawRows, error } = await query;
+
+      if (error) {
+        console.error(error);
+        toast.error(error.message);
+        setPosts([]);
+        setLoadingPosts(false);
+        return;
+      }
+
+      let postRows = rawRows ?? [];
+      if (isTopByLikesFilter(feedFilter)) {
+        const ranked = await rankPostsByLiveLikes(supabase, postRows);
+        postRows = ranked.slice(0, 50);
+      }
+
+      const userIds = postRows.map((p) => p.user_id);
+
+      const { data: profileRows } = await supabase
+        .from("profiles")
+        .select("id, username")
+        .in("id", userIds);
+
+      const usernameMap: Record<string, string | undefined> = {};
+      profileRows?.forEach((p) => {
+        usernameMap[p.id] = p.username ?? undefined;
+      });
+
+      const mapped = mapClubRows(postRows, club.name, activeClub, usernameMap);
+      finish(cacheKey, mapped);
+    };
+
+    if (!activeClub) {
+      // Home page: always load trending across all clubs
+      loadTrending();
+    } else if (feedFilter === "Trending") {
+      loadTrending();
+    } else {
+      loadClubFeed();
+    }
+
+    return () => {
+      cancelled = true;
+      if (finishTimer) clearTimeout(finishTimer);
+    };
+  }, [activeClub, feedFilter, postId, feedNonce]);
 
   /* realtime posts */
   useEffect(() => {
@@ -227,9 +340,8 @@ const Home = () => {
       "postgres_changes",
       { event: "INSERT", schema: "public", table: "posts" },
       () => {
-        if (!activeClub) return;
-        delete feedCache.current[activeClub];
-        setActiveClub((c) => (c ? c + "" : c));
+        feedCache.current = {};
+        setFeedNonce((n) => n + 1);
       },
     );
 
@@ -342,7 +454,13 @@ const Home = () => {
                   activeClub={activeClub}
                   onSelectClub={(clubSlug) => {
                     setActiveClub(clubSlug);
+                    setFeedFilter("Trending");
                     navigate(`/c/${clubSlug}`);
+                  }}
+                  onGoHome={() => {
+                    setActiveClub(null);
+                    setFeedFilter("Trending");
+                    navigate("/home");
                   }}
                 />
               </div>
@@ -350,96 +468,110 @@ const Home = () => {
 
             {/* CENTER */}
             <main className="flex-1 h-full overflow-y-auto relative scrollbar-thin scrollbar-thumb-muted">
-              {!activeClub && initialClubChecked && (
-                <div className="h-full flex items-center justify-center">
-                  <div className="text-center space-y-3">
-                    <div className="text-2xl font-semibold">
-                      Join a club to start exploring
+              <div className="max-w-3xl mx-auto px-8 py-6 space-y-7 pb-40">
+                {/* Header: filter bar inside club, trending header on home */}
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  {activeClub ? (
+                    <FeedFilterBar
+                      active={feedFilter}
+                      onChange={setFeedFilter}
+                    />
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-semibold bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
+                        🔥 Trending
+                      </span>
+                      <span className="text-sm text-muted-foreground">
+                        across your clubs
+                      </span>
                     </div>
-                    <p className="text-muted-foreground">
-                      Your feed will appear here.
-                    </p>
-                  </div>
+                  )}
+                  {activeClub && (
+                    <InteractiveHoverButton
+                      onClick={() => setCreateOpen(true)}
+                      className="border-primary text-primary"
+                    >
+                      Create
+                    </InteractiveHoverButton>
+                  )}
                 </div>
-              )}
 
-              {activeClub && (
-                <>
-                  <div className="max-w-3xl mx-auto px-8 py-6 space-y-7 pb-40">
-                    <div className="flex items-center justify-between gap-4 flex-wrap">
-                      <FeedFilterBar active="New" onChange={() => {}} />
-                      <InteractiveHoverButton
-                        onClick={() => setCreateOpen(true)}
-                        className="border-primary text-primary"
-                      >
-                        Create
-                      </InteractiveHoverButton>
-                    </div>
-
-                    {loadingPosts &&
-                      Array.from({ length: 5 }).map((_, i) => (
-                        <SkeletonPost key={i} />
-                      ))}
-
-                    {!loadingPosts &&
-                      posts.map((post) => (
-                        <PostCard
-                          key={post.id}
-                          {...post}
-                          onOpenDetail={() => {
-                            navigate(`/c/${activeClub}/${post.id}`);
-                            setSelectedPost(post);
-                          }}
-                        />
-                      ))}
-                  </div>
-
-                  <div className="sticky bottom-0 pointer-events-none">
-                    <ProgressiveBlur height="140px" position="bottom" />
-                  </div>
-                </>
-              )}
-            </main>
-
-            {/* RIGHT */}
-            <aside className="hidden xl:flex w-80 min-w-[320px] border-l border-border h-full flex-col bg-muted/20">
-              <div className="px-5 py-4 border-b border-border backdrop-blur-xl sticky top-0 bg-background/80 z-10">
-                <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-                  Members — {members.length}
-                </p>
-              </div>
-
-              <div className="flex-1 overflow-y-auto px-3 py-4 space-y-3 scrollbar-thin scrollbar-thumb-muted">
                 {loadingPosts &&
-                  Array.from({ length: 8 }).map((_, i) => (
-                    <SkeletonMember key={i} />
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <SkeletonPost key={i} />
                   ))}
 
-                {!loadingPosts && (
-                  <>
-                    <div>
-                      <p className="text-[11px] px-2 mb-2 text-muted-foreground uppercase tracking-wider font-semibold">
-                        Online — {onlineMembers.length}
+                {!loadingPosts && posts.length === 0 && initialLoaded && (
+                  <div className="flex items-center justify-center py-20">
+                    <div className="text-center space-y-3">
+                      <div className="text-2xl font-semibold">
+                        {activeClub ? "No posts yet" : "Join a club to start exploring"}
+                      </div>
+                      <p className="text-muted-foreground">
+                        {activeClub ? "Be the first to post in this club!" : "Your trending feed will appear here."}
                       </p>
-
-                      {onlineMembers.map((m) => (
-                        <MemberRow key={m.id} m={m} online />
-                      ))}
                     </div>
-
-                    <div className="pt-3">
-                      <p className="text-[11px] px-2 mb-2 text-muted-foreground uppercase tracking-wider font-semibold">
-                        Offline — {offlineMembers.length}
-                      </p>
-
-                      {offlineMembers.map((m) => (
-                        <MemberRow key={m.id} m={m} />
-                      ))}
-                    </div>
-                  </>
+                  </div>
                 )}
+
+                {!loadingPosts &&
+                  posts.map((post) => (
+                    <PostCard
+                      key={post.id}
+                      {...post}
+                      onOpenDetail={() => {
+                        setSelectedPost(post);
+                      }}
+                    />
+                  ))}
               </div>
-            </aside>
+
+              <div className="sticky bottom-0 pointer-events-none">
+                <ProgressiveBlur height="70px" position="bottom" />
+              </div>
+            </main>
+
+            {/* RIGHT — only show members panel when inside a club */}
+            {activeClub && (
+              <aside className="hidden xl:flex w-80 min-w-[320px] border-l border-border h-full flex-col bg-muted/20">
+                <div className="px-5 py-4 border-b border-border backdrop-blur-xl sticky top-0 bg-background/80 z-10">
+                  <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+                    Members — {members.length}
+                  </p>
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-3 py-4 space-y-3 scrollbar-thin scrollbar-thumb-muted">
+                  {loadingPosts &&
+                    Array.from({ length: 8 }).map((_, i) => (
+                      <SkeletonMember key={i} />
+                    ))}
+
+                  {!loadingPosts && (
+                    <>
+                      <div>
+                        <p className="text-[11px] px-2 mb-2 text-muted-foreground uppercase tracking-wider font-semibold">
+                          Online — {onlineMembers.length}
+                        </p>
+
+                        {onlineMembers.map((m) => (
+                          <MemberRow key={m.id} m={m} online />
+                        ))}
+                      </div>
+
+                      <div className="pt-3">
+                        <p className="text-[11px] px-2 mb-2 text-muted-foreground uppercase tracking-wider font-semibold">
+                          Offline — {offlineMembers.length}
+                        </p>
+
+                        {offlineMembers.map((m) => (
+                          <MemberRow key={m.id} m={m} />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </aside>
+            )}
 
           </motion.div>
         ) : (
@@ -459,10 +591,10 @@ const Home = () => {
         open={createOpen}
         onOpenChange={setCreateOpen}
         clubSlug={activeClub}
-        onCreated={() => setActiveClub((s) => (s ? s + "" : s))}
-        onOptimisticPost={(p) =>
-          addOptimisticPost({ ...p, username: currentUsername })
-        }
+        onCreated={() => {
+          feedCache.current = {};
+          setFeedNonce((n) => n + 1);
+        }}
       />
 
       <PostDetailDialog
@@ -470,7 +602,6 @@ const Home = () => {
         onOpenChange={(o) => {
           if (!o) {
             setSelectedPost(null);
-            navigate(`/c/${activeClub}`);
           }
         }}
         post={selectedPost}

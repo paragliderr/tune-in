@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import CommentThread from "./CommentThread";
 import { motion } from "framer-motion";
 import { supabase } from "@/lib/supabase";
+import { trackFeedLike } from "@/lib/api";
 import {WordRotate} from "@/components/ui/word-rotate";
 
 const getClubIcon = (club: string) => {
@@ -108,22 +109,55 @@ export default function PostDetailDialog({ open, onOpenChange, post }: any) {
 
     if (!user) return;
 
+    // Optimistic update
+    const prevReaction = reaction;
+    const prevLikes = likeCount;
+    const prevDislikes = dislikeCount;
+
     if (reaction === type) {
-      await supabase
-        .from("post_reactions")
-        .delete()
-        .eq("post_id", post.id)
-        .eq("user_id", user.id);
+      setReaction(null);
+      if (type === "like") setLikeCount((c) => Math.max(0, c - 1));
+      else setDislikeCount((c) => Math.max(0, c - 1));
     } else {
-      await supabase.from("post_reactions").upsert({
-        post_id: post.id,
-        user_id: user.id,
-        reaction: type,
-      });
+      if (reaction === "like") setLikeCount((c) => Math.max(0, c - 1));
+      if (reaction === "dislike") setDislikeCount((c) => Math.max(0, c - 1));
+      setReaction(type);
+      if (type === "like") setLikeCount((c) => c + 1);
+      else setDislikeCount((c) => c + 1);
     }
 
-    await loadCounts();
-    window.dispatchEvent(new Event("reactionUpdated"));
+    try {
+      if (prevReaction === type) {
+        await supabase
+          .from("post_reactions")
+          .delete()
+          .eq("post_id", post.id)
+          .eq("user_id", user.id);
+      } else {
+        await supabase.from("post_reactions").upsert(
+          {
+            post_id: post.id,
+            user_id: user.id,
+            reaction: type,
+          },
+          { onConflict: "post_id,user_id" },
+        );
+        if (
+          type === "like" &&
+          typeof post.id === "string" &&
+          !String(post.id).startsWith("optimistic-")
+        ) {
+          void trackFeedLike(user.id, post.id);
+        }
+      }
+
+      await loadCounts();
+      window.dispatchEvent(new Event("reactionUpdated"));
+    } catch {
+      setReaction(prevReaction);
+      setLikeCount(prevLikes);
+      setDislikeCount(prevDislikes);
+    }
   };
 
   const Icon = getClubIcon(post?.clubName);
@@ -178,7 +212,7 @@ export default function PostDetailDialog({ open, onOpenChange, post }: any) {
                 >
                   <img
                     src={post.image}
-                    className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-40"
+                    className="absolute inset-0 w-full h-full object-cover blur-sm scale-105 opacity-15"
                   />
 
                   <img
@@ -196,6 +230,7 @@ export default function PostDetailDialog({ open, onOpenChange, post }: any) {
                       ? { scale: [1, 1.35, 1], boxShadow: "0 0 22px #22c55e" }
                       : { scale: 1 }
                   }
+                  transition={{ duration: 0.15 }}
                   onClick={() => react("like")}
                   className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm ${
                     reaction === "like"
@@ -217,6 +252,7 @@ export default function PostDetailDialog({ open, onOpenChange, post }: any) {
                         }
                       : {}
                   }
+                  transition={{ duration: 0.15 }}
                   onClick={() => react("dislike")}
                   className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm ${
                     reaction === "dislike"

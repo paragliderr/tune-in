@@ -1,4 +1,6 @@
 from fastapi import APIRouter, HTTPException
+from typing import Optional
+
 from pydantic import BaseModel
 import os
 from supabase import create_client, Client
@@ -17,6 +19,7 @@ class PostCreate(BaseModel):
     content: str
     club_id: str
     user_id: str
+    image_url: Optional[str] = None
 
 @router.post("/")
 def create_new_post(post: PostCreate):
@@ -34,8 +37,10 @@ def create_new_post(post: PostCreate):
             "club_id": post.club_id,
             "title": post.title,
             "content": post.content,
-            "embedding": str(vector_list)
+            "embedding": str(vector_list),
         }
+        if post.image_url:
+            new_post_data["image_url"] = post.image_url
         
         response = supabase.table("posts").insert(new_post_data).execute()
         
