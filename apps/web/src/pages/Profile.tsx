@@ -2,7 +2,11 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { motion } from "framer-motion";
-import { ArrowLeft, Link2 } from "lucide-react";
+import { ArrowLeft, Link2, Search } from "lucide-react";
+import PostCard from "@/components/home/PostCard";
+import PostDetailDialog from "@/components/home/PostDetailDialog";
+
+import { mapFeedRowsToPostCards } from "@/lib/feedMap";
 
 export default function Profile() {
   const { username } = useParams();
@@ -10,6 +14,9 @@ export default function Profile() {
 
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [posts, setPosts] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedPost, setSelectedPost] = useState<any>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -21,7 +28,25 @@ export default function Profile() {
         .eq("username", username)
         .single();
 
-      setProfile(data);
+      if (data) {
+        setProfile(data);
+
+        // Fetch user posts
+        const { data: userPosts } = await supabase
+          .from("posts")
+          .select("*")
+          .eq("user_id", data.id)
+          .order("created_at", { ascending: false });
+
+        if (userPosts) {
+          console.log("Supabase raw userPosts:", userPosts.length, userPosts);
+          const mapped = await mapFeedRowsToPostCards(supabase, userPosts);
+          console.log("Mapped posts:", mapped.length, mapped);
+          setPosts(mapped);
+        } else {
+          setPosts([]);
+        }
+      }
       setLoading(false);
     };
 
@@ -105,8 +130,52 @@ export default function Profile() {
               ))}
             </div>
           </div>
+
+          {/* USER POSTS */}
+          <div className="mt-12">
+            <h3 className="font-semibold mb-5 text-lg">Posts</h3>
+            
+            <div className="relative mb-6">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground w-5 h-5" />
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search posts..."
+                className="w-full bg-background/50 border border-border rounded-full py-3 pl-12 pr-6 focus:outline-none focus:border-primary/50 transition-colors"
+              />
+            </div>
+
+            <div className="flex flex-col gap-4">
+              {posts
+                .filter(
+                  (p) =>
+                    (p.title || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    (p.content || "").toLowerCase().includes(searchQuery.toLowerCase())
+                )
+                .map((post) => (
+                  <PostCard
+                    key={post.id}
+                    {...post}
+                    onOpenDetail={() => setSelectedPost(post)}
+                  />
+                ))}
+              {posts.length === 0 && (
+                <div className="text-center text-muted-foreground py-8">
+                  No posts found. (Debug: profileId={profile && profile.id}, userPostsCount={posts.length})
+                </div>
+              )}
+            </div>
+          </div>
         </motion.div>
       </div>
+
+      <PostDetailDialog
+        post={selectedPost}
+        open={!!selectedPost}
+        onOpenChange={(o) => {
+          if (!o) setSelectedPost(null);
+        }}
+      />
     </div>
   );
 }

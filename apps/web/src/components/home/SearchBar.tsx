@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Search } from "lucide-react";
 import { motion } from "framer-motion";
 
-const SearchBar = () => {
+const SearchBar = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => {
   const [focused, setFocused] = useState(false);
 
   return (
@@ -17,6 +17,8 @@ const SearchBar = () => {
       <input
         type="text"
         placeholder="Search posts or clubs..."
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         className="w-full bg-transparent py-2.5 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"

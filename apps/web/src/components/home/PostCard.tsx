@@ -170,7 +170,7 @@ export default function PostCard({
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ scale: 1.02 }}
       transition={{ type: "spring", stiffness: 260, damping: 22 }}
-      className="max-w-2xl mx-auto rounded-2xl border border-border bg-card/60 backdrop-blur-xl p-5 cursor-pointer"
+      className="w-full text-left rounded-2xl border border-border bg-card/60 backdrop-blur-xl p-5 cursor-pointer"
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("button")) return;
         onOpenDetail?.();

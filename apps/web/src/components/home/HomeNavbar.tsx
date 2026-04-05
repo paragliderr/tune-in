@@ -97,6 +97,7 @@ const HomeNavbar = ({ activeTab, onTabChange }: HomeNavbarProps) => {
         <ProfileDropdown
           open={dropdownOpen}
           onClose={() => setDropdownOpen(false)}
+          username={username}
         />
       </div>
     </nav>

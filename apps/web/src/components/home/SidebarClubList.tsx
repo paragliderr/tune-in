@@ -40,6 +40,8 @@ interface SidebarClubListProps {
   activeClub: string | null;
   onSelectClub: (id: string) => void;
   onGoHome?: () => void;
+  searchQuery: string;
+  onSearchQueryChange: (q: string) => void;
 }
 
 const ClubItem = ({
@@ -118,6 +120,8 @@ const SidebarClubList = ({
   activeClub,
   onSelectClub,
   onGoHome,
+  searchQuery,
+  onSearchQueryChange,
 }: SidebarClubListProps) => {
   const [joinedClubs, setJoinedClubs] = useState<Club[]>([]);
   const [suggestedClubs, setSuggestedClubs] = useState<Club[]>([]);
@@ -347,91 +351,97 @@ const confirmLeave = async () => {
 
   return (
     <div ref={sidebarRef} className="flex flex-col gap-3 h-full relative">
-      <SearchBar />
+      <SearchBar value={searchQuery} onChange={onSearchQueryChange} />
 
-      {/* Home / Trending button */}
-      <motion.button
-        whileHover={{ scale: 1.015 }}
-        whileTap={{ scale: 0.98 }}
-        onClick={() => onGoHome?.()}
-        className={`w-full flex items-center gap-3.5 px-3 py-3 rounded-xl border transition-all duration-300 ${
-          activeClub === null
-            ? "border-primary bg-primary/10 shadow-[0_0_15px_hsl(270_70%_60%/0.15)]"
-            : "border-transparent bg-card/30 hover:border-primary/20 hover:bg-card/50"
-        }`}
-      >
-        <div className="w-11 h-11 rounded-xl bg-black border border-white/10 flex items-center justify-center shrink-0">
-          <Icons.Flame className="w-5 h-5 text-white opacity-90" />
+      <div className="flex-1 overflow-y-auto pr-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] flex flex-col gap-3 pb-4">
+        {/* Home / Trending button */}
+        <motion.button
+          whileHover={{ scale: 1.015 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => onGoHome?.()}
+          className={`w-full flex items-center gap-3.5 px-3 py-3 rounded-xl border transition-all duration-300 ${
+            activeClub === null
+              ? "border-primary bg-primary/10 shadow-[0_0_15px_hsl(270_70%_60%/0.15)]"
+              : "border-transparent bg-card/30 hover:border-primary/20 hover:bg-card/50"
+          }`}
+        >
+          <div className="w-11 h-11 rounded-xl bg-black border border-white/10 flex items-center justify-center shrink-0">
+            <Icons.Flame className="w-5 h-5 text-white opacity-90" />
+          </div>
+          <div className="flex-1 text-left min-w-0">
+            <p className="text-[15px] font-medium text-foreground truncate">Home</p>
+            <p className="text-[12px] text-muted-foreground mt-0.5">Trending across all clubs</p>
+          </div>
+        </motion.button>
+
+        <div className="h-px bg-border/50 mx-1 shrink-0" />
+
+        <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold px-1 shrink-0">
+          Your Clubs
+        </p>
+
+        <div className="space-y-1.5 shrink-0">
+          <AnimatePresence>
+            {loading ? (
+              <p className="text-xs text-muted-foreground px-2 py-2">
+                Loading clubs...
+              </p>
+            ) : (
+              joinedClubs.map((club, i) => (
+                <ClubItem
+                  key={club.id}
+                  club={club}
+                  isActive={activeClub === club.slug}
+                  onClick={() => onSelectClub(club.slug)}
+                  index={i}
+                  onHover={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setHoverTop(rect.top + rect.height / 2);
+                    setHoveredClub(club);
+                  }}
+                  onLeave={() => setHoveredClub(null)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setMenuClub(club);
+                    setMenuPos({ x: e.clientX, y: e.clientY });
+                  }}
+                />
+              ))
+            )}
+          </AnimatePresence>
         </div>
-        <div className="flex-1 text-left min-w-0">
-          <p className="text-[15px] font-medium text-foreground truncate">Home</p>
-          <p className="text-[12px] text-muted-foreground mt-0.5">Trending across all clubs</p>
-        </div>
-      </motion.button>
 
-      <div className="h-px bg-border/50 mx-1" />
+        {suggestedClubs.length > 0 && (
+          <>
+            <div className="h-px bg-border/50 mx-1 shrink-0 mt-2" />
 
-      <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold px-1 mt-1">
-        Your Clubs
-      </p>
-
-      <div className="space-y-1.5">
-        <AnimatePresence>
-          {loading ? (
-            <p className="text-xs text-muted-foreground px-2 py-2">
-              Loading clubs...
+            <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold px-1 shrink-0">
+              Discover Clubs
             </p>
-          ) : (
-            joinedClubs.map((club, i) => (
-              <ClubItem
-                key={club.id}
-                club={club}
-                isActive={activeClub === club.slug}
-                onClick={() => onSelectClub(club.slug)}
-                index={i}
-                onHover={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  setHoverTop(rect.top + rect.height / 2);
-                  setHoveredClub(club);
-                }}
-                onLeave={() => setHoveredClub(null)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setMenuClub(club);
-                  setMenuPos({ x: e.clientX, y: e.clientY });
-                }}
-              />
-            ))
-          )}
-        </AnimatePresence>
-      </div>
 
-      <div className="h-px bg-border/50 mx-1" />
-
-      <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold px-1">
-        Discover Clubs
-      </p>
-
-      <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
-        <AnimatePresence>
-          {suggestedClubs.map((club, i) => (
-            <ClubItem
-              key={club.id}
-              club={club}
-              isActive={false}
-              onClick={() => onSelectClub(club.slug)}
-              index={i}
-              isSuggested
-              onJoin={() => handleJoin(club)}
-              onHover={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                setHoverTop(rect.top + rect.height / 2);
-                setHoveredClub(club);
-              }}
-              onLeave={() => setHoveredClub(null)}
-            />
-          ))}
-        </AnimatePresence>
+            <div className="space-y-1.5 shrink-0">
+              <AnimatePresence>
+                {suggestedClubs.map((club, i) => (
+                  <ClubItem
+                    key={club.id}
+                    club={club}
+                    isActive={false}
+                    onClick={() => onSelectClub(club.slug)}
+                    index={i}
+                    isSuggested
+                    onJoin={() => handleJoin(club)}
+                    onHover={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setHoverTop(rect.top + rect.height / 2);
+                      setHoveredClub(club);
+                    }}
+                    onLeave={() => setHoveredClub(null)}
+                  />
+                ))}
+              </AnimatePresence>
+            </div>
+          </>
+        )}
       </div>
 
       {/* ⭐ CONTEXT MENU */}

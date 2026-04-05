@@ -33,6 +33,7 @@ const Home = () => {
 
   const [activeTab, setActiveTab] = useState<HomeTab>("Clubs");
   const [activeClub, setActiveClub] = useState<string | null>(null);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
   const { slug, postId } = useParams();
   const navigate = useNavigate();
 
@@ -462,6 +463,8 @@ const Home = () => {
                     setFeedFilter("Trending");
                     navigate("/home");
                   }}
+                  searchQuery={globalSearchQuery}
+                  onSearchQueryChange={setGlobalSearchQuery}
                 />
               </div>
             </aside>
@@ -515,15 +518,21 @@ const Home = () => {
                 )}
 
                 {!loadingPosts &&
-                  posts.map((post) => (
-                    <PostCard
-                      key={post.id}
-                      {...post}
-                      onOpenDetail={() => {
-                        setSelectedPost(post);
-                      }}
-                    />
-                  ))}
+                  posts
+                    .filter((p) =>
+                      !globalSearchQuery ||
+                      (p.title || "").toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
+                      (p.content || "").toLowerCase().includes(globalSearchQuery.toLowerCase())
+                    )
+                    .map((post) => (
+                      <PostCard
+                        key={post.id}
+                        {...post}
+                        onOpenDetail={() => {
+                          setSelectedPost(post);
+                        }}
+                      />
+                    ))}
               </div>
 
               <div className="sticky bottom-0 pointer-events-none">

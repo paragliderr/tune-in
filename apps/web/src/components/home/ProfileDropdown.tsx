@@ -6,17 +6,18 @@ import { supabase } from "@/lib/supabase";
 interface ProfileDropdownProps {
   open: boolean;
   onClose: () => void;
+  username?: string;
 }
 
-const items = [
-  { label: "Profile", icon: User, action: "/profile" },
-  { label: "Account Settings", icon: Settings, action: "/settings" },
-  { label: "Saved", icon: Bookmark, action: "/saved" },
-  { label: "Logout", icon: LogOut, action: "logout" },
-];
-
-const ProfileDropdown = ({ open, onClose }: ProfileDropdownProps) => {
+const ProfileDropdown = ({ open, onClose, username }: ProfileDropdownProps) => {
   const navigate = useNavigate();
+
+  const items = [
+    { label: "Profile", icon: User, action: username ? `/user/${username}` : "/profile" },
+    { label: "Account Settings", icon: Settings, action: "/settings" },
+    { label: "Saved", icon: Bookmark, action: "/saved" },
+    { label: "Logout", icon: LogOut, action: "logout" },
+  ];
 
   const handleClick = async (action: string) => {
     onClose();
@@ -47,7 +48,7 @@ const ProfileDropdown = ({ open, onClose }: ProfileDropdownProps) => {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.95 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="absolute right-0 top-full mt-2 z-50 w-56 rounded-2xl border border-border bg-card/80 backdrop-blur-xl shadow-[0_8px_30px_hsl(0_0%_0%/0.4)] overflow-hidden"
+            className="absolute right-0 top-full mt-2 z-50 w-56 rounded-2xl border border-border/40 bg-black/90 backdrop-blur-2xl shadow-[0_8px_30px_hsl(0_0%_0%/0.6)] overflow-hidden"
           >
             {items.map((item) => {
               const Icon = item.icon;

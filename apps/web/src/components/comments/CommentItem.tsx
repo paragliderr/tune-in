@@ -13,6 +13,7 @@ import { useReplies } from "@/hooks/useReplies";
 import { supabase } from "@/lib/supabase";
 import { useNavigate } from "react-router-dom";
 import { WordRotate } from "@/components/ui/word-rotate";
+import { toast } from "sonner";
 
 export default function CommentItem({ comment }: any) {
   const navigate = useNavigate();
@@ -20,6 +21,7 @@ export default function CommentItem({ comment }: any) {
   const [open, setOpen] = useState(comment.depth < 2);
   const [replying, setReplying] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [deleted, setDeleted] = useState(false);
   const [text, setText] = useState("");
 
   const [likes, setLikes] = useState(0);
@@ -154,19 +156,29 @@ export default function CommentItem({ comment }: any) {
     setReplying(false);
   };
 
+  const deleteComment = async () => {
+    setDeleted(true);
+    toast.success("Comment deleted");
+    await supabase.from("comments").delete().eq("id", comment.id);
+  };
+
   const toggle = () => {
     setOpen(!open);
     if (!loaded) load();
   };
 
   return (
-    <motion.div
-      ref={ref}
-      layout
-      initial={{ opacity: 0, y: 15 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="ml-6 border-l border-border/50 pl-5 mt-7"
-    >
+    <AnimatePresence>
+      {!deleted && (
+        <motion.div
+          ref={ref}
+          layout
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, height: 0, filter: "blur(4px)", marginTop: 0, overflow: "hidden" }}
+          transition={{ duration: 0.3 }}
+          className="ml-6 border-l border-border/50 pl-5 mt-7"
+        >
       <div className="flex gap-4">
         <img
           onClick={() => navigate(`/user/${comment.profiles.username}`)}
@@ -237,6 +249,23 @@ export default function CommentItem({ comment }: any) {
                 <button onClick={() => setMenu(!menu)}>
                   <MoreHorizontal size={18} />
                 </button>
+                <AnimatePresence>
+                  {menu && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9, y: 5 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: 5 }}
+                      className="absolute left-0 top-full mt-2 w-32 bg-background border border-border rounded-xl shadow-xl overflow-hidden z-50"
+                    >
+                      <button
+                        onClick={deleteComment}
+                        className="w-full text-left px-4 py-2 text-red-500 hover:bg-red-500/10 transition-colors text-sm font-medium"
+                      >
+                        Delete
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             )}
 
@@ -282,6 +311,8 @@ export default function CommentItem({ comment }: any) {
           </AnimatePresence>
         </div>
       </div>
-    </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
