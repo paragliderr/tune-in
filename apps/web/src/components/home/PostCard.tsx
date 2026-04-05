@@ -55,6 +55,12 @@ export default function PostCard({
   const [saved, setSaved] = useState(false);
   const [showComments, setShowComments] = useState(false);
 
+  const [localCommentCount, setLocalCommentCount] = useState(commentCount || 0);
+
+  useEffect(() => {
+    setLocalCommentCount(commentCount);
+  }, [commentCount]);
+
   const [layoutReady, setLayoutReady] = useState(false);
 
   useEffect(() => {
@@ -75,8 +81,14 @@ export default function PostCard({
       .eq("post_id", id)
       .eq("reaction", "dislike");
 
+    const { count: comments } = await supabase
+      .from("comments")
+      .select("*", { count: "exact", head: true })
+      .eq("post_id", id);
+
     setLikeCount(likes || 0);
     setDislikeCount(dislikes || 0);
+    if (comments !== null) setLocalCommentCount(comments);
 
     const {
       data: { user },
@@ -98,7 +110,11 @@ export default function PostCard({
     loadCounts();
     const handler = () => loadCounts();
     window.addEventListener("reactionUpdated", handler);
-    return () => window.removeEventListener("reactionUpdated", handler);
+    window.addEventListener("commentUpdated", handler);
+    return () => {
+      window.removeEventListener("reactionUpdated", handler);
+      window.removeEventListener("commentUpdated", handler);
+    };
   }, [id]);
 
   const react = async (type: "like" | "dislike") => {
@@ -263,7 +279,7 @@ export default function PostCard({
           className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:bg-muted/50"
         >
           <MessageSquare size={16} />
-          {commentCount}
+          {localCommentCount}
         </button>
 
         <button onClick={() => setSaved(!saved)} className="ml-auto px-3">

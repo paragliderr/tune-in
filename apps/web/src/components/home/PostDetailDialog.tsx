@@ -67,6 +67,12 @@ export default function PostDetailDialog({ open, onOpenChange, post }: any) {
     }
   }, [open]);
 
+  const [localCommentCount, setLocalCommentCount] = useState(post?.commentCount || 0);
+
+  useEffect(() => {
+    if (post) setLocalCommentCount(post.commentCount);
+  }, [post]);
+
   const loadCounts = async () => {
     if (!post) return;
 
@@ -79,6 +85,13 @@ export default function PostDetailDialog({ open, onOpenChange, post }: any) {
       setLikeCount(reactions.filter((r) => r.reaction === "like").length);
       setDislikeCount(reactions.filter((r) => r.reaction === "dislike").length);
     }
+
+    const { count: comments } = await supabase
+      .from("comments")
+      .select("*", { count: "exact", head: true })
+      .eq("post_id", post.id);
+
+    if (comments !== null) setLocalCommentCount(comments);
 
     const {
       data: { user },
@@ -97,7 +110,16 @@ export default function PostDetailDialog({ open, onOpenChange, post }: any) {
   };
 
   useEffect(() => {
-    if (open && post) loadCounts();
+    if (open && post) {
+      loadCounts();
+      const handler = () => loadCounts();
+      window.addEventListener("reactionUpdated", handler);
+      window.addEventListener("commentUpdated", handler);
+      return () => {
+        window.removeEventListener("reactionUpdated", handler);
+        window.removeEventListener("commentUpdated", handler);
+      };
+    }
   }, [open, post]);
 
   const react = async (type: "like" | "dislike") => {
@@ -266,7 +288,7 @@ export default function PostDetailDialog({ open, onOpenChange, post }: any) {
 
                 <div className="flex items-center gap-1 px-3 text-sm text-muted-foreground">
                   <MessageSquare size={16} />
-                  {post.commentCount}
+                  {localCommentCount}
                 </div>
 
                 <motion.button

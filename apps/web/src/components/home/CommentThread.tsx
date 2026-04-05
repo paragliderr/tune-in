@@ -54,6 +54,7 @@ export default function CommentThread({ postId }: Props) {
     });
 
     setText("");
+    window.dispatchEvent(new Event("commentUpdated"));
   };
 
   return (

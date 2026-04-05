@@ -154,12 +154,14 @@ export default function CommentItem({ comment }: any) {
 
     setText("");
     setReplying(false);
+    window.dispatchEvent(new Event("commentUpdated"));
   };
 
   const deleteComment = async () => {
     setDeleted(true);
     toast.success("Comment deleted");
     await supabase.from("comments").delete().eq("id", comment.id);
+    window.dispatchEvent(new Event("commentUpdated"));
   };
 
   const toggle = () => {
