@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { ProgressiveBlur } from "@/components/ui/progressive-blur";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
@@ -20,6 +20,7 @@ import FeedFilterBar from "@/components/home/FeedFilterBar";
 import PostCard from "@/components/home/PostCard";
 import PostDetailDialog from "@/components/home/PostDetailDialog";
 import MaintenanceScreen from "@/components/home/MaintenanceScreen";
+import CinemaTab from "@/components/home/CinemaTab";
 import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
 import CreatePostDialog from "@/components/home/CreatePostDialog";
 import MemberHoverCard from "@/components/home/MemberHoverCard";
@@ -31,11 +32,23 @@ const Home = () => {
   const justChangedRef = useRef<Set<string>>(new Set());
   const consumedAnimRef = useRef<Set<string>>(new Set());
 
-  const [activeTab, setActiveTab] = useState<HomeTab>("Clubs");
+  const location = useLocation();
+  const isCinemaRoute = location.pathname === "/cinema";
+
+  const [activeTab, setActiveTab] = useState<HomeTab>(isCinemaRoute ? "Cinema" : "Clubs");
   const [activeClub, setActiveClub] = useState<string | null>(null);
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
   const { slug, postId } = useParams();
   const navigate = useNavigate();
+
+  const handleTabChange = (tab: HomeTab) => {
+    setActiveTab(tab);
+    if (tab === "Cinema") {
+      navigate("/cinema");
+    } else if (tab === "Clubs") {
+      navigate("/home");
+    }
+  };
 
   const [hoveredMember, setHoveredMember] = useState<any>(null);
   const [hoverRect, setHoverRect] = useState<DOMRect | null>(null);
@@ -442,7 +455,7 @@ const Home = () => {
 
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
-      <HomeNavbar activeTab={activeTab} onTabChange={setActiveTab} />
+      <HomeNavbar activeTab={activeTab} onTabChange={handleTabChange} />
 
       <AnimatePresence mode="wait">
         {activeTab === "Clubs" ? (
@@ -582,6 +595,17 @@ const Home = () => {
               </aside>
             )}
 
+          </motion.div>
+        ) : activeTab === "Cinema" ? (
+          <motion.div
+            key="cinema"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="flex-1 flex overflow-hidden"
+          >
+            <CinemaTab />
           </motion.div>
         ) : (
           <motion.div className="flex-1 flex">
