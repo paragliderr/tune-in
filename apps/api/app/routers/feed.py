@@ -40,7 +40,7 @@ def track_like(body: TrackLikeRequest):
 @router.post("/")
 def get_unified_feed(request: FeedRequest):
     try:
-        # ── Stage 1: Fetch user's recent interactions from Redis ──
+        # ── Stage 1: Fetching user's recent interactions from Redis ──
         try:
             recent_post_ids = get_recent_interactions(request.user_id, "like") or []
         except Exception as redis_err:
@@ -49,13 +49,12 @@ def get_unified_feed(request: FeedRequest):
         seen_ids = [_as_post_id(pid) for pid in recent_post_ids]
         mood_vector = [0.0] * 128 
         
-        # ── Stage 2: Build mood vector from history ──
+        # ── Stage 2: Building mood vector from history ──
         if seen_ids:
             try:
                 history_response = supabase.table("posts").select("embedding").in_("id", seen_ids).execute()
                 if history_response.data:
-                    # PostgREST returns pgvector columns as strings like "[0.1,0.2,...]"
-                    # We need to parse them into lists of floats
+                    # Converting pgvector into lists of floats
                     import json
                     historical_vectors = []
                     for post in history_response.data:
@@ -69,7 +68,7 @@ def get_unified_feed(request: FeedRequest):
                     
                     if historical_vectors:
                         result_vec = build_session_vector(historical_vectors)
-                        # Ensure it's a plain Python list (not a torch tensor)
+                        
                         mood_vector = list(result_vec) if not isinstance(result_vec, list) else result_vec
             except Exception as hist_err:
                 print(f"HISTORY VECTOR BUILD ERROR: {hist_err}")
@@ -86,7 +85,6 @@ def get_unified_feed(request: FeedRequest):
 
         exploit_limit = int(request.limit * 0.75)
         
-        # Format embedding as pgvector-compatible string: "[0.1,0.2,...]"
         embedding_str = "[" + ",".join(str(float(v)) for v in mood_vector) + "]"
 
         try:
@@ -120,7 +118,7 @@ def get_unified_feed(request: FeedRequest):
         unique_feed_dict = {post['id']: post for post in unified_feed}
         final_feed = list(unique_feed_dict.values())
         
-        # Shuffle so the "Explore" posts are mixed naturally into the feed
+        # Shuffling the feed
         random.shuffle(final_feed)
 
         return {
