@@ -14,6 +14,8 @@ import { rankPostsByLiveLikes } from "@/lib/rankPostsByLikes";
 import { toast } from "sonner";
 import useGlobalPresence from "@/hooks/useGlobalPresence";
 
+import AIHomeFeed from "@/components/AIHomeFeed";
+
 import HomeNavbar, { type HomeTab } from "@/components/home/HomeNavbar";
 import SidebarClubList from "@/components/home/SidebarClubList";
 import FeedFilterBar from "@/components/home/FeedFilterBar";
@@ -26,7 +28,23 @@ import CreatePostDialog from "@/components/home/CreatePostDialog";
 import MemberHoverCard from "@/components/home/MemberHoverCard";
 
 const Home = () => {
-  const { onlineUserIds } = useGlobalPresence();   // ⭐ PRESENCE
+  // AI Feed
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setCurrentUserId(session.user.id);
+      } else {
+        // Fallback for testing 
+        setCurrentUserId("00261715-f8ee-41c9-b334-706177aba732"); 
+      }
+    };
+    fetchUser();
+  }, []);
+  //--END--
+  const { onlineUserIds } = useGlobalPresence();  
 
   const prevOnlineRef = useRef<Set<string>>(new Set());
   const justChangedRef = useRef<Set<string>>(new Set());
@@ -72,22 +90,22 @@ const Home = () => {
   }, [slug]);
 
   useEffect(() => {
-  const prev = prevOnlineRef.current;
-  const now = onlineUserIds;
+    const prev = prevOnlineRef.current;
+    const now = onlineUserIds;
 
-  const changed = new Set<string>();
+    const changed = new Set<string>();
 
-  now.forEach((id) => {
-    if (!prev.has(id)) changed.add(id);
-  });
+    now.forEach((id) => {
+      if (!prev.has(id)) changed.add(id);
+    });
 
-  prev.forEach((id) => {
-    if (!now.has(id)) changed.add(id);
-  });
+    prev.forEach((id) => {
+      if (!now.has(id)) changed.add(id);
+    });
 
-  justChangedRef.current = changed;
-  prevOnlineRef.current = new Set(now);
-}, [onlineUserIds]);
+    justChangedRef.current = changed;
+    prevOnlineRef.current = new Set(now);
+  }, [onlineUserIds]);
 
   /* mark initial load done (no auto-club-select — reddit style) */
   useEffect(() => {
@@ -366,7 +384,7 @@ const Home = () => {
     };
   }, [activeClub]);
 
-  /* ⭐ PRESENCE SORTING */
+  /* PRESENCE SORTING */
   const onlineMembers = members
     .filter((m) => onlineUserIds.has(m.id))
     .sort((a, b) => a.username.localeCompare(b.username));
@@ -376,67 +394,64 @@ const Home = () => {
     .sort((a, b) => a.username.localeCompare(b.username));
 
   const MemberRow = ({ m, online }: any) => {
-  const changed = justChangedRef.current.has(m.id);
-  const shouldAnimate =
-    changed && !consumedAnimRef.current.has(m.id);
+    const changed = justChangedRef.current.has(m.id);
+    const shouldAnimate = changed && !consumedAnimRef.current.has(m.id);
 
-  if (shouldAnimate) consumedAnimRef.current.add(m.id);
+    if (shouldAnimate) consumedAnimRef.current.add(m.id);
 
-  return (
-    <motion.div
-      layout="position"
-      initial={false}
-      animate={
-        shouldAnimate
-          ? { opacity: [0, 1], x: [-14, 0], scale: [0.96, 1] }
-          : { opacity: 1, x: 0, scale: 1 }
-      }
-      transition={{ type: "spring", stiffness: 260, damping: 22 }}
-      onMouseEnter={(e) => {
-        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        clearTimeout(hoverTimer.current);
-        hoverTimer.current = setTimeout(() => {
-          setHoverRect(rect);
-          setHoveredMember(m);
-        }, 180);
-      }}
-      onMouseLeave={() => {
-        clearTimeout(hoverTimer.current);
-        setHoveredMember(null);
-      }}
-      onClick={() => navigate(`/user/${m.username}`)}
-      className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-muted/60 cursor-pointer"
-    >
-      <div className="relative">
-        <img
-          src={m.avatar_url}
-          className="w-9 h-9 rounded-full object-cover"
-        />
-
-        <AnimatePresence>
-  {online && (
-    <motion.span
-      key="online-dot"
-      initial={shouldAnimate ? { scale: 0 } : false}
-      animate={
-  shouldAnimate
-    ? { scale: [0, 1.25, 1], opacity: [0.6, 1] }
-    : { scale: 1 }
-}
-      exit={{ scale: 0 }}
-      transition={{ type: "spring", stiffness: 400, damping: 18 }}
-      className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-green-500 ring-2 ring-background shadow-[0_0_8px_rgba(34,197,94,0.9)]"
-    />
-  )}
-</AnimatePresence>
-      </div>
-
-      <p className="text-sm transition-colors hover:text-primary">
-        {m.username}
-      </p>
-    </motion.div>
-  );
-};
+    return (
+      <motion.div
+        layout="position"
+        initial={false}
+        animate={
+          shouldAnimate
+            ? { opacity: [0, 1], x: [-14, 0], scale: [0.96, 1] }
+            : { opacity: 1, x: 0, scale: 1 }
+        }
+        transition={{ type: "spring", stiffness: 260, damping: 22 }}
+        onMouseEnter={(e) => {
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          clearTimeout(hoverTimer.current);
+          hoverTimer.current = setTimeout(() => {
+            setHoverRect(rect);
+            setHoveredMember(m);
+          }, 180);
+        }}
+        onMouseLeave={() => {
+          clearTimeout(hoverTimer.current);
+          setHoveredMember(null);
+        }}
+        onClick={() => navigate(`/user/${m.username}`)}
+        className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-muted/60 cursor-pointer"
+      >
+        <div className="relative">
+          <img
+            src={m.avatar_url}
+            className="w-9 h-9 rounded-full object-cover"
+          />
+          <AnimatePresence>
+            {online && (
+              <motion.span
+                key="online-dot"
+                initial={shouldAnimate ? { scale: 0 } : false}
+                animate={
+                  shouldAnimate
+                    ? { scale: [0, 1.25, 1], opacity: [0.6, 1] }
+                    : { scale: 1 }
+                }
+                exit={{ scale: 0 }}
+                transition={{ type: "spring", stiffness: 400, damping: 18 }}
+                className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-green-500 ring-2 ring-background shadow-[0_0_8px_rgba(34,197,94,0.9)]"
+              />
+            )}
+          </AnimatePresence>
+        </div>
+        <p className="text-sm transition-colors hover:text-primary">
+          {m.username}
+        </p>
+      </motion.div>
+    );
+  };
 
   const SkeletonPost = () => (
     <div className="rounded-xl border border-border p-5 space-y-3 animate-pulse">
@@ -485,6 +500,7 @@ const Home = () => {
             {/* CENTER */}
             <main className="flex-1 h-full overflow-y-auto relative scrollbar-thin scrollbar-thumb-muted">
               <div className="max-w-3xl mx-auto px-8 py-6 space-y-7 pb-40">
+
                 {/* Header: filter bar inside club, trending header on home */}
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   {activeClub ? (
@@ -493,14 +509,22 @@ const Home = () => {
                       onChange={setFeedFilter}
                     />
                   ) : (
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg font-semibold bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
-                        🔥 Trending
-                      </span>
-                      <span className="text-sm text-muted-foreground">
-                        across your clubs
-                      </span>
-                    </div>
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                    {activeClub && (
+                      <FeedFilterBar
+                        active={feedFilter}
+                        onChange={setFeedFilter}
+                      />
+                    )}
+                    {activeClub && (
+                      <InteractiveHoverButton
+                        onClick={() => setCreateOpen(true)}
+                        className="border-primary text-primary"
+                      >
+                        Create
+                      </InteractiveHoverButton>
+                    )}
+                  </div>
                   )}
                   {activeClub && (
                     <InteractiveHoverButton
@@ -512,28 +536,30 @@ const Home = () => {
                   )}
                 </div>
 
+                {/* Skeleton loader */}
                 {loadingPosts &&
                   Array.from({ length: 5 }).map((_, i) => (
                     <SkeletonPost key={i} />
                   ))}
 
-                {!loadingPosts && posts.length === 0 && initialLoaded && (
+                {/* Empty state */}
+                {!loadingPosts && posts.length === 0 && initialLoaded && activeClub && (
                   <div className="flex items-center justify-center py-20">
                     <div className="text-center space-y-3">
-                      <div className="text-2xl font-semibold">
-                        {activeClub ? "No posts yet" : "Join a club to start exploring"}
-                      </div>
+                      <div className="text-2xl font-semibold">No posts yet</div>
                       <p className="text-muted-foreground">
-                        {activeClub ? "Be the first to post in this club!" : "Your trending feed will appear here."}
+                        Be the first to post in this club!
                       </p>
                     </div>
                   </div>
                 )}
 
-                {!loadingPosts &&
+                {/* --- SMART FEED ROUTER --- */}
+                {globalSearchQuery ? (
+                  // Search mode: filter posts from the normal feed
+                  !loadingPosts &&
                   posts
                     .filter((p) =>
-                      !globalSearchQuery ||
                       (p.title || "").toLowerCase().includes(globalSearchQuery.toLowerCase()) ||
                       (p.content || "").toLowerCase().includes(globalSearchQuery.toLowerCase())
                     )
@@ -541,12 +567,28 @@ const Home = () => {
                       <PostCard
                         key={post.id}
                         {...post}
-                        onOpenDetail={() => {
-                          setSelectedPost(post);
-                        }}
+                        onOpenDetail={() => setSelectedPost(post)}
                       />
-                    ))}
-              </div>
+                    ))
+                ) : !activeClub && currentUserId ? (
+                  // Home page: show AI-powered personalized feed
+                  <AIHomeFeed
+                    currentUserId={currentUserId}
+                    onOpenDetail={(post) => setSelectedPost(post)}
+                  />
+                ) : (
+                  // Inside a club: show normal post list
+                  !loadingPosts &&
+                  posts.map((post) => (
+                    <PostCard
+                      key={post.id}
+                      {...post}
+                      onOpenDetail={() => setSelectedPost(post)}
+                    />
+                  ))
+                )}
+
+              </div> {/* closes max-w-3xl */}
 
               <div className="sticky bottom-0 pointer-events-none">
                 <ProgressiveBlur height="70px" position="bottom" />
@@ -574,7 +616,6 @@ const Home = () => {
                         <p className="text-[11px] px-2 mb-2 text-muted-foreground uppercase tracking-wider font-semibold">
                           Online — {onlineMembers.length}
                         </p>
-
                         {onlineMembers.map((m) => (
                           <MemberRow key={m.id} m={m} online />
                         ))}
@@ -584,7 +625,6 @@ const Home = () => {
                         <p className="text-[11px] px-2 mb-2 text-muted-foreground uppercase tracking-wider font-semibold">
                           Offline — {offlineMembers.length}
                         </p>
-
                         {offlineMembers.map((m) => (
                           <MemberRow key={m.id} m={m} />
                         ))}
