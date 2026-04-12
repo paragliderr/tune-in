@@ -70,10 +70,9 @@ export async function fetchTrendingFeed(
   feed: Record<string, unknown>[];
   message?: string;
 }> {
-  const res = await fetch(apiUrl("/feed/"), {
-    method: "POST",
+  const res = await fetch(apiUrl(`/v1/feed/${userId}`), {
+    method: "GET",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: userId, limit }),
   });
   const text = await readBodyText(res);
   if (!res.ok) {
