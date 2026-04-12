@@ -13,6 +13,9 @@ import {
   Gamepad2,
   Sparkles,
   Dumbbell,
+  Trash2,
+  Loader2,
+  XCircle,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import CommentThread from "./CommentThread";
@@ -45,6 +48,10 @@ export default function PostDetailDialog({ open, onOpenChange, post }: any) {
   const [likeCount, setLikeCount] = useState(0);
   const [dislikeCount, setDislikeCount] = useState(0);
   const [saved, setSaved] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const navigate = useNavigate();
 
@@ -97,6 +104,8 @@ export default function PostDetailDialog({ open, onOpenChange, post }: any) {
       data: { user },
     } = await supabase.auth.getUser();
 
+    setCurrentUser(user);
+
     if (!user) return;
 
     const { data } = await supabase
@@ -121,6 +130,29 @@ export default function PostDetailDialog({ open, onOpenChange, post }: any) {
       };
     }
   }, [open, post]);
+
+  const handleDeletePost = async () => {
+    if (!post) return;
+    try {
+      const { error } = await supabase.from("posts").delete().eq("id", post.id);
+      if (error) throw error;
+      toast({
+        title: "Deleted",
+        description: "Post deleted successfully",
+      });
+      window.dispatchEvent(new CustomEvent("postDeleted", { detail: { id: post.id } }));
+      onOpenChange(false);
+    } catch {
+      toast({
+        title: "Error",
+        description: "Failed to delete post",
+        variant: "destructive"
+      });
+    } finally {
+      setIsDeleting(false);
+      setShowConfirmDelete(false);
+    }
+  };
 
   const react = async (type: "like" | "dislike") => {
     if (!post) return;
@@ -216,6 +248,38 @@ export default function PostDetailDialog({ open, onOpenChange, post }: any) {
                   · {post.time}
                 </p>
               </div>
+
+              {/* Delete Box */}
+              {currentUser?.id === post.user_id && (
+                <div className="ml-auto flex items-center h-full">
+                  {showConfirmDelete ? (
+                    <div className="flex items-center gap-1.5 bg-destructive/10 text-destructive text-xs px-2 py-1.5 rounded-md border border-destructive/20 z-10">
+                      <span>Delete?</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setIsDeleting(true); handleDeletePost(); }}
+                        disabled={isDeleting}
+                        className="font-bold hover:underline px-1 uppercase"
+                      >
+                        {isDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : "Yes"}
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setShowConfirmDelete(false); }}
+                        disabled={isDeleting}
+                        className="hover:text-foreground text-destructive/70"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setShowConfirmDelete(true); }}
+                      className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors z-10"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="px-6 py-5 space-y-4">

@@ -11,7 +11,11 @@ import {
   Gamepad2,
   Sparkles,
   Dumbbell,
+  Trash2,
+  Loader2,
+  XCircle,
 } from "lucide-react";
+import { toast } from "sonner";
 import CommentThread from "./CommentThread";
 import { supabase } from "@/lib/supabase";
 import { trackFeedLike } from "@/lib/api";
@@ -45,15 +49,21 @@ export default function PostCard({
   content,
   image,
   commentCount,
+  user_id,
   onOpenDetail,
 }: any) {
   const Icon = getClubIcon(clubName);
 
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [reaction, setReaction] = useState<"like" | "dislike" | null>(null);
   const [likeCount, setLikeCount] = useState(0);
   const [dislikeCount, setDislikeCount] = useState(0);
   const [saved, setSaved] = useState(false);
   const [showComments, setShowComments] = useState(false);
+  
+  const [isDeleted, setIsDeleted] = useState(false);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [localCommentCount, setLocalCommentCount] = useState(commentCount || 0);
 
@@ -94,6 +104,8 @@ export default function PostCard({
       data: { user },
     } = await supabase.auth.getUser();
 
+    setCurrentUser(user);
+
     if (!user) return;
 
     const { data } = await supabase
@@ -109,13 +121,32 @@ export default function PostCard({
   useEffect(() => {
     loadCounts();
     const handler = () => loadCounts();
+    const deleteHandler = (e: any) => {
+      if (e.detail?.id === id) setIsDeleted(true);
+    };
     window.addEventListener("reactionUpdated", handler);
     window.addEventListener("commentUpdated", handler);
+    window.addEventListener("postDeleted", deleteHandler);
     return () => {
       window.removeEventListener("reactionUpdated", handler);
       window.removeEventListener("commentUpdated", handler);
+      window.removeEventListener("postDeleted", deleteHandler);
     };
   }, [id]);
+
+  const handleDeletePost = async () => {
+    try {
+      const { error } = await supabase.from("posts").delete().eq("id", id);
+      if (error) throw error;
+      toast.success("Post deleted successfully");
+      setIsDeleted(true);
+    } catch {
+      toast.error("Failed to delete post.");
+    } finally {
+      setIsDeleting(false);
+      setShowConfirmDelete(false);
+    }
+  };
 
   const react = async (type: "like" | "dislike") => {
     const {
@@ -178,6 +209,8 @@ export default function PostCard({
     }
   };
 
+  if (isDeleted) return null;
+
   return (
     <motion.div
       layoutId={layoutReady ? `post-card-${id}` : undefined}
@@ -192,7 +225,7 @@ export default function PostCard({
         onOpenDetail?.();
       }}
     >
-      <div className="flex items-center gap-3 mb-3">
+      <div className="flex items-center gap-3 mb-3 relative">
         <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center">
           <Icon size={18} />
         </div>
@@ -203,6 +236,38 @@ export default function PostCard({
             @{username} · {time}
           </p>
         </div>
+
+        {/* Delete Box */}
+        {currentUser?.id === user_id && (
+          <div className="ml-auto flex items-center h-full">
+            {showConfirmDelete ? (
+              <div className="flex items-center gap-1.5 bg-destructive/10 text-destructive text-xs px-2 py-1.5 rounded-md border border-destructive/20 z-10">
+                <span>Delete?</span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setIsDeleting(true); handleDeletePost(); }}
+                  disabled={isDeleting}
+                  className="font-bold hover:underline px-1 uppercase"
+                >
+                  {isDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : "Yes"}
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowConfirmDelete(false); }}
+                  disabled={isDeleting}
+                  className="hover:text-foreground text-destructive/70"
+                >
+                  <XCircle className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowConfirmDelete(true); }}
+                className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors z-10"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <h3 className="font-semibold mb-2">{title}</h3>

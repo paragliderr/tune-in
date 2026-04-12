@@ -2,7 +2,7 @@ const TMDB_BASE = "https://api.themoviedb.org/3";
 const TMDB_IMG = "https://image.tmdb.org/t/p";
 
 // TMDB API key — this is a publishable read-only key
-const API_KEY = import.meta.env.VITE_TMDB_API_KEY || "";
+const API_KEY = import.meta.env.VITE_TMDB_API_KEY || "cf05dca0aade29184be916d382203d15";
 
 function url(path: string, params: Record<string, string> = {}) {
   const u = new URL(`${TMDB_BASE}${path}`);

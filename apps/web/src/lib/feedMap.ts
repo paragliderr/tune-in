@@ -58,6 +58,7 @@ export async function mapFeedRowsToPostCards(
     const created = p.created_at as string | undefined;
     return {
       id: p.id,
+      user_id: uid,
       clubSlug: club?.slug ?? "",
       clubName: club?.name ?? (p._clubs as { name?: string } | undefined)?.name ?? "Club",
       clubColor: "from-purple-600 to-indigo-700",

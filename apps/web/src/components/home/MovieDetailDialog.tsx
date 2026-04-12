@@ -323,6 +323,14 @@ const MovieDetailDialog = ({ open, onOpenChange, movie }: Props) => {
     supabase.auth.getUser().then(({ data: { user } }) => setCurrentUser(user));
   }, []);
 
+  /* Reset scroll on view change */
+  useEffect(() => {
+    const el = document.getElementById("movie-dialog-content");
+    if (el) {
+      el.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [view]);
+
   /* Reset on movie change */
   useEffect(() => {
     if (!movie || !open) return;
@@ -566,7 +574,7 @@ const MovieDetailDialog = ({ open, onOpenChange, movie }: Props) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* Increased dialog width to max-w-5xl, added overflow constraint */}
-      <DialogContent className="max-w-5xl w-[95vw] max-h-[92vh] overflow-y-auto overflow-x-hidden bg-card/95 backdrop-blur-xl border-border/50 p-0 gap-0 rounded-2xl shadow-2xl">
+      <DialogContent id="movie-dialog-content" className="max-w-5xl w-[95vw] max-h-[92vh] overflow-y-auto overflow-x-hidden bg-card/95 backdrop-blur-xl border-border/50 p-0 gap-0 rounded-2xl shadow-2xl">
         <DialogTitle className="sr-only">{title}</DialogTitle>
 
         {/* Backdrop hero */}
