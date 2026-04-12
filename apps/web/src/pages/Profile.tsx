@@ -9,6 +9,8 @@ import MovieDetailDialog from "@/components/home/MovieDetailDialog";
 
 import { mapFeedRowsToPostCards } from "@/lib/feedMap";
 import { tmdb, img, type TMDBMovie } from "@/lib/tmdb";
+import { igdb, gameImg, type IGDBGame } from "@/lib/igdb";
+import GameDetailDialog from "@/components/home/GameDetailDialog";
 
 export default function Profile() {
   const { username } = useParams();
@@ -30,6 +32,12 @@ export default function Profile() {
   const [cinemaLoading, setCinemaLoading] = useState(false);
   const [cinemaFetched, setCinemaFetched] = useState(false);
   const [selectedMovie, setSelectedMovie] = useState<TMDBMovie | null>(null);
+
+  // Games State
+  const [gameReviews, setGameReviews] = useState<any[]>([]);
+  const [gamesLoading, setGamesLoading] = useState(false);
+  const [gamesFetched, setGamesFetched] = useState(false);
+  const [selectedGameId, setSelectedGameId] = useState<number | null>(null);
 
   // Load Profile and Posts (Init)
   useEffect(() => {
@@ -105,6 +113,43 @@ export default function Profile() {
       fetchCinema();
     }
   }, [activeTab, profile, cinemaFetched]);
+
+  // Load Game Reviews
+  useEffect(() => {
+    if (activeTab === "games" && !gamesFetched && profile) {
+      const fetchGames = async () => {
+        setGamesLoading(true);
+        try {
+          const { data } = await supabase
+            .from("game_reviews")
+            .select("*")
+            .eq("user_id", profile.id)
+            .order("created_at", { ascending: false })
+            .limit(20);
+
+          if (data && data.length > 0) {
+            const enriched = await Promise.all(
+              data.map(async (rev) => {
+                try {
+                  const gameData = await igdb.gameDetail(rev.game_id);
+                  return { ...rev, game: gameData };
+                } catch {
+                  return rev;
+                }
+              })
+            );
+            setGameReviews(enriched.filter(r => r.game));
+          }
+          setGamesFetched(true);
+        } catch (error) {
+          console.error("Failed to load game reviews", error);
+        } finally {
+          setGamesLoading(false);
+        }
+      };
+      fetchGames();
+    }
+  }, [activeTab, profile, gamesFetched]);
 
   if (loading)
     return (
@@ -322,10 +367,70 @@ export default function Profile() {
                  initial={{ opacity: 0, y: 10 }}
                  animate={{ opacity: 1, y: 0 }}
               >
-                <div className="text-center text-muted-foreground py-20 bg-muted/10 border border-dashed border-border/60 rounded-3xl flex flex-col items-center gap-3 shadow-inner">
-                  <Gamepad2 className="w-12 h-12 text-muted-foreground/30 drop-shadow-sm" />
-                  <h3 className="text-lg font-semibold text-foreground/70 tracking-tight">NO GAMES REVIEWED</h3>
-                  <p className="text-sm max-w-sm">This user hasn't posted any game reviews yet.</p>
+                <div className="flex flex-col gap-5">
+                  {gamesLoading ? (
+                     <div className="text-center text-muted-foreground py-12 flex flex-col items-center gap-3">
+                        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                        Loading game reviews...
+                     </div>
+                  ) : gameReviews.length === 0 ? (
+                     <div className="text-center text-muted-foreground py-12 bg-muted/20 border border-dashed border-border rounded-2xl flex flex-col items-center gap-3">
+                        <Gamepad2 className="w-10 h-10 text-muted-foreground/40" />
+                        No game reviews found.
+                     </div>
+                  ) : (
+                     gameReviews.map((rev, i) => {
+                       const { game } = rev;
+                       const year = game.first_release_date 
+                        ? new Date(game.first_release_date * 1000).getFullYear().toString() 
+                        : "";
+                       const name = game.name;
+                       const poster = gameImg(game.cover?.url, "t_cover_big");
+                       const reviewDate = new Date(rev.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+                       
+                       return (
+                          <motion.div
+                             key={rev.id}
+                             initial={{ opacity: 0, y: 15 }}
+                             animate={{ opacity: 1, y: 0 }}
+                             transition={{ delay: i * 0.05 }}
+                             onClick={() => setSelectedGameId(game.id)}
+                             className="flex gap-4 sm:gap-5 p-4 rounded-2xl bg-muted/10 border border-border/50 hover:border-primary/40 hover:bg-muted/30 cursor-pointer transition-all shadow-sm group"
+                          >
+                             {/* Thumbnail */}
+                             <div className="w-20 sm:w-28 h-28 sm:h-36 shrink-0 rounded-xl overflow-hidden shadow-sm bg-muted/40 relative">
+                               {poster ? (
+                                  <img src={poster} alt={name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                               ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground uppercase text-center p-2">No Image</div>
+                               )}
+                             </div>
+                             
+                             {/* Content */}
+                             <div className="flex-1 min-w-0 py-1 flex flex-col">
+                               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 sm:gap-4">
+                                 <div>
+                                   <h4 className="text-base sm:text-lg font-bold text-foreground group-hover:text-primary transition-colors line-clamp-1">{name}</h4>
+                                   <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5">
+                                      Game • {year} • {reviewDate}
+                                   </p>
+                                 </div>
+                                 
+                                 <div className="flex items-center gap-0.5 bg-background/80 px-2 py-1 rounded-md border border-border/40 shadow-sm shrink-0 w-fit mt-1 sm:mt-0">
+                                    {[...Array(5)].map((_, si) => (
+                                      <Star key={si} className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${si < rev.rating ? "text-yellow-500 fill-yellow-500 drop-shadow-sm" : "text-muted-foreground/30"}`} />
+                                    ))}
+                                 </div>
+                               </div>
+                               
+                               <p className="mt-3 text-xs sm:text-sm text-foreground/80 leading-relaxed line-clamp-3 sm:line-clamp-4">
+                                 {rev.content}
+                               </p>
+                             </div>
+                          </motion.div>
+                       );
+                     })
+                  )}
                 </div>
               </motion.div>
             )}
@@ -347,6 +452,14 @@ export default function Profile() {
         open={!!selectedMovie && activeTab === "cinema"}
         onOpenChange={(o) => {
           if (!o) setSelectedMovie(null);
+        }}
+      />
+
+      <GameDetailDialog
+        gameId={selectedGameId}
+        open={!!selectedGameId && activeTab === "games"}
+        onOpenChange={(o) => {
+          if (!o) setSelectedGameId(null);
         }}
       />
     </div>

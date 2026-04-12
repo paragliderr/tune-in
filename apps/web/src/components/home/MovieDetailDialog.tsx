@@ -16,8 +16,12 @@ import {
   ExternalLink,
   Trash2,
   XCircle,
+  CheckCircle2,
+  AlertTriangle,
+  Film,
+  Tv,
 } from "lucide-react";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
   tmdb,
   img,
@@ -27,10 +31,12 @@ import {
   type TMDBDetail,
   type TMDBReview,
   type TMDBCast,
+  type TMDBPersonCredit,
   type TMDBWatchProvider,
   type TMDBWatchProviders,
   type TMDBSeasonDetail,
   type TMDBEpisode,
+  type TMDBGenre,
 } from "@/lib/tmdb";
 
 interface Props {
@@ -95,7 +101,7 @@ const StarRating = ({
 };
 
 /* ── Scrollable Cast Row ── */
-const CastRow = ({ cast }: { cast: TMDBCast[] }) => {
+const CastRow = ({ cast, onPersonClick }: { cast: TMDBCast[]; onPersonClick: (id: number, name: string) => void }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(false);
@@ -115,10 +121,7 @@ const CastRow = ({ cast }: { cast: TMDBCast[] }) => {
   }, [cast]);
 
   const scroll = (dir: "left" | "right") => {
-    scrollRef.current?.scrollBy({
-      left: dir === "left" ? -400 : 400,
-      behavior: "smooth",
-    });
+    scrollRef.current?.scrollBy({ left: dir === "left" ? -400 : 400, behavior: "smooth" });
   };
 
   if (cast.length === 0) return null;
@@ -128,63 +131,169 @@ const CastRow = ({ cast }: { cast: TMDBCast[] }) => {
       <h3 className="text-sm font-semibold text-foreground">Cast</h3>
       <div className="relative group w-full">
         {canLeft && (
-          <button
-            onClick={() => scroll("left")}
-            className="absolute left-0 top-0 bottom-0 z-10 w-10 bg-gradient-to-r from-card via-card/90 to-transparent flex items-center justify-start opacity-0 group-hover:opacity-100 transition-opacity"
-          >
+          <button onClick={() => scroll("left")} className="absolute left-0 top-0 bottom-0 z-10 w-10 bg-gradient-to-r from-card via-card/90 to-transparent flex items-center justify-start opacity-0 group-hover:opacity-100 transition-opacity">
             <ChevronLeft className="w-5 h-5 text-foreground drop-shadow-md" />
           </button>
         )}
-        <div
-          ref={scrollRef}
-          className="flex gap-4 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] px-1 w-full"
-        >
+        <div ref={scrollRef} className="flex gap-4 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] px-1 w-full">
           {cast.map((c, i) => (
             <motion.div
               key={c.id}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.03 }}
-              className="flex-shrink-0 w-[100px] text-center"
+              onClick={() => onPersonClick(c.id, c.name)}
+              className="flex-shrink-0 w-[100px] text-center cursor-pointer group/cast"
             >
-              <div className="w-[100px] h-[100px] rounded-xl overflow-hidden bg-muted/30 border border-border/20 shadow-sm">
+              <div className="w-[100px] h-[100px] rounded-xl overflow-hidden bg-muted/30 border border-border/20 shadow-sm group-hover/cast:border-primary/40 group-hover/cast:shadow-primary/10 transition-all">
                 {c.profile_path ? (
-                  <img
-                    src={img(c.profile_path, "w185")!}
-                    alt={c.name}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
+                  <img src={img(c.profile_path, "w185")!} alt={c.name} className="w-full h-full object-cover group-hover/cast:scale-105 transition-transform duration-300" loading="lazy" />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-lg text-muted-foreground font-bold">
-                    {c.name.charAt(0)}
-                  </div>
+                  <div className="w-full h-full flex items-center justify-center text-lg text-muted-foreground font-bold">{c.name.charAt(0)}</div>
                 )}
               </div>
-              <p className="text-xs font-semibold text-foreground mt-2 truncate leading-tight">
-                {c.name}
-              </p>
-              <p className="text-[10px] text-muted-foreground truncate leading-tight mt-0.5">
-                {c.character}
-              </p>
+              <p className="text-xs font-semibold text-foreground mt-2 truncate leading-tight group-hover/cast:text-primary transition-colors">{c.name}</p>
+              <p className="text-[10px] text-muted-foreground truncate leading-tight mt-0.5">{c.character}</p>
               {c.total_episode_count && (
-                <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                  {c.total_episode_count} eps
-                </p>
+                <p className="text-[10px] text-muted-foreground/60 mt-0.5">{c.total_episode_count} eps</p>
               )}
             </motion.div>
           ))}
         </div>
         {canRight && (
-          <button
-            onClick={() => scroll("right")}
-            className="absolute right-0 top-0 bottom-0 z-10 w-10 bg-gradient-to-l from-card via-card/90 to-transparent flex items-center justify-end opacity-0 group-hover:opacity-100 transition-opacity"
-          >
+          <button onClick={() => scroll("right")} className="absolute right-0 top-0 bottom-0 z-10 w-10 bg-gradient-to-l from-card via-card/90 to-transparent flex items-center justify-end opacity-0 group-hover:opacity-100 transition-opacity">
             <ChevronRight className="w-5 h-5 text-foreground drop-shadow-md" />
           </button>
         )}
       </div>
     </div>
+  );
+};
+
+/* ── Person Discography View ── */
+const PersonView = ({
+  personId,
+  personName,
+  onBack,
+  onSelectMovie,
+}: {
+  personId: number;
+  personName: string;
+  onBack: () => void;
+  onSelectMovie: (m: TMDBMovie) => void;
+}) => {
+  const [credits, setCredits] = useState<TMDBPersonCredit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [typeFilter, setTypeFilter] = useState<"all" | "movie" | "tv">("all");
+  const [genreFilter, setGenreFilter] = useState<string>("All");
+  const [genres, setGenres] = useState<TMDBGenre[]>([]);
+
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (gridRef.current) gridRef.current.scrollTo({ top: 0, behavior: "smooth" });
+  }, [typeFilter, genreFilter]);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([tmdb.personCredits(personId), tmdb.movieGenres(), tmdb.tvGenres()])
+      .then(([data, mg, tg]) => {
+        // Filter out duplicate IDs (common in combined credits)
+        const uniqueCast = data.cast.filter((c, index, self) => 
+          index === self.findIndex((t) => t.id === c.id && t.media_type === c.media_type)
+        );
+        setCredits(uniqueCast);
+        const allGenres = [...mg, ...tg].filter((g, i, a) => a.findIndex(x => x.id === g.id) === i);
+        setGenres(allGenres);
+      })
+      .catch(() => setCredits([]))
+      .finally(() => setLoading(false));
+  }, [personId]);
+
+
+  const filtered = credits.filter(m => {
+    const typeOk = typeFilter === "all" || m.media_type === typeFilter;
+    const genreOk = genreFilter === "All" || (m.genre_ids?.includes(genres.find(g => g.name === genreFilter)?.id ?? -1));
+    return typeOk && genreOk;
+  });
+
+  const allGenreNames = ["All", ...Array.from(new Set(credits.flatMap(m => m.genre_ids?.map(id => genres.find(g => g.id === id)?.name).filter(Boolean) as string[] || [])))];
+
+  return (
+    <motion.div
+      key={`person-${personId}`}
+      initial={{ opacity: 0, x: 30 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -30 }}
+      className="px-6 py-5 space-y-5 w-full"
+    >
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="p-1.5 rounded-lg hover:bg-muted/40 transition-colors">
+          <ArrowLeft className="w-4 h-4 text-foreground" />
+        </button>
+        <div>
+          <h3 className="text-base font-bold text-foreground">{personName}</h3>
+          <p className="text-xs text-muted-foreground">{filtered.length} title{filtered.length !== 1 ? "s" : ""}</p>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-2 flex-wrap items-center">
+        {(["all", "movie", "tv"] as const).map(t => (
+          <button
+            key={t}
+            onClick={() => setTypeFilter(t)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              typeFilter === t ? "bg-primary text-primary-foreground shadow-sm" : "bg-muted/40 text-muted-foreground hover:bg-muted/70"
+            }`}
+          >
+            {t === "movie" && <Film className="w-3 h-3" />}
+            {t === "tv" && <Tv className="w-3 h-3" />}
+            {t === "all" ? "All" : t === "movie" ? "Movies" : "Shows"}
+          </button>
+        ))}
+        <select
+          value={genreFilter}
+          onChange={e => setGenreFilter(e.target.value)}
+          className="premium-select"
+        >
+          {allGenreNames.map(g => g && <option key={g} value={g}>{g === "All" ? "All Genres" : g}</option>)}
+        </select>
+
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 text-primary animate-spin" /></div>
+      ) : filtered.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-8">No titles found.</p>
+      ) : (
+        <div ref={gridRef} className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 max-h-[50vh] overflow-y-auto pr-1">
+
+          {filtered.map(m => (
+            <motion.div
+              key={`${m.id}-${m.media_type}`}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              whileHover={{ scale: 1.04 }}
+              onClick={() => onSelectMovie({ ...m, media_type: m.media_type } as any)}
+              className="cursor-pointer group"
+            >
+              <div className="aspect-[2/3] rounded-lg overflow-hidden bg-muted/30 border border-border/20 group-hover:border-primary/40 transition-all">
+                {m.poster_path ? (
+                  <img src={img(m.poster_path, "w342")!} alt={m.title || m.name} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    {m.media_type === "tv" ? <Tv className="w-5 h-5 text-muted-foreground/40" /> : <Film className="w-5 h-5 text-muted-foreground/40" />}
+                  </div>
+                )}
+              </div>
+              <p className="text-[11px] font-medium mt-1 truncate group-hover:text-primary transition-colors">{m.title || m.name}</p>
+              <p className="text-[10px] text-muted-foreground">{(m.release_date || m.first_air_date || "").slice(0, 4)}</p>
+            </motion.div>
+          ))}
+        </div>
+      )}
+    </motion.div>
   );
 };
 
@@ -289,11 +398,11 @@ const WhereToWatch = ({
   );
 };
 
-/* ── View modes inside the dialog ── */
 type DialogView =
   | { type: "main" }
   | { type: "allSeasons" }
-  | { type: "seasonDetail"; seasonNumber: number };
+  | { type: "seasonDetail"; seasonNumber: number }
+  | { type: "person"; personId: number; personName: string };
 
 const MovieDetailDialog = ({ open, onOpenChange, movie }: Props) => {
   const navigate = useNavigate();
@@ -310,6 +419,7 @@ const MovieDetailDialog = ({ open, onOpenChange, movie }: Props) => {
   const [userRating, setUserRating] = useState(0);
   const [userReview, setUserReview] = useState("");
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [reviewToDelete, setReviewToDelete] = useState<string | null>(null);
 
   const [view, setView] = useState<DialogView>({ type: "main" });
   const [seasonDetail, setSeasonDetail] = useState<TMDBSeasonDetail | null>(
@@ -433,6 +543,7 @@ const MovieDetailDialog = ({ open, onOpenChange, movie }: Props) => {
         .eq("id", id);
       if (error) throw error;
       setCustomReviews((prev) => prev.filter((r) => r.id !== id));
+      setReviewToDelete(null);
       toast.success("Review removed");
     } catch {
       toast.error("Failed to delete review");
@@ -576,6 +687,10 @@ const MovieDetailDialog = ({ open, onOpenChange, movie }: Props) => {
       {/* Increased dialog width to max-w-5xl, added overflow constraint */}
       <DialogContent id="movie-dialog-content" className="max-w-5xl w-[95vw] max-h-[92vh] overflow-y-auto overflow-x-hidden bg-card/95 backdrop-blur-xl border-border/50 p-0 gap-0 rounded-2xl shadow-2xl">
         <DialogTitle className="sr-only">{title}</DialogTitle>
+        <DialogDescription className="sr-only">
+          In-depth details, cast members, seasons, and community reviews for {title}.
+        </DialogDescription>
+
 
         {/* Backdrop hero */}
         <div className="relative h-64 md:h-80 overflow-hidden rounded-t-2xl w-full">
@@ -674,7 +789,20 @@ const MovieDetailDialog = ({ open, onOpenChange, movie }: Props) => {
 
         {/* ── Switchable content area ── */}
         <AnimatePresence mode="wait">
-          {view.type === "allSeasons" ? (
+          {view.type === "person" ? (
+            <motion.div key={`person-${view.personId}`} initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} className="w-full">
+              <PersonView
+                personId={view.personId}
+                personName={view.personName}
+                onBack={() => setView({ type: "main" })}
+                onSelectMovie={(m) => {
+                  setView({ type: "main" });
+                  // Let parent swap to new movie by firing a custom event
+                  window.dispatchEvent(new CustomEvent("openMovie", { detail: { movie: m } }));
+                }}
+              />
+            </motion.div>
+          ) : view.type === "allSeasons" ? (
             <motion.div
               key="allSeasons"
               initial={{ opacity: 0, x: 30 }}
@@ -718,7 +846,7 @@ const MovieDetailDialog = ({ open, onOpenChange, movie }: Props) => {
               </div>
 
               {/* Cast */}
-              <CastRow cast={cast} />
+              <CastRow cast={cast} onPersonClick={(id, name) => setView({ type: "person", personId: id, personName: name })} />
 
               {/* Where to Watch */}
               <WhereToWatch providers={watchProviders} />
@@ -778,83 +906,106 @@ const MovieDetailDialog = ({ open, onOpenChange, movie }: Props) => {
 
               {/* ── WRITE REVIEW ── */}
               <div className="px-6 py-6 border-b border-border/30 w-full bg-card/40">
-                <h3 className="text-base font-semibold text-foreground mb-3">
-                  Write a Review
-                </h3>
-                <div className="space-y-4 max-w-3xl">
-                  {/* Stars logic with Animated Glow */}
-                  <StarRating value={userRating} onChange={setUserRating} />
-
-                  <div className="flex flex-col gap-3">
-                    <textarea
-                      value={userReview}
-                      onChange={(e) => setUserReview(e.target.value)}
-                      placeholder="Share your thoughts with the Tune-In community..."
-                      className="w-full bg-muted/30 border border-border/40 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors min-h-[90px] resize-none"
-                    />
-
-                    <AnimatePresence>
-                      {showCancelConfirm && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: "auto" }}
-                          exit={{ opacity: 0, height: 0 }}
-                          className="bg-destructive/10 border border-destructive/20 text-destructive text-sm px-4 py-3 rounded-lg flex items-center justify-between"
-                        >
-                          <span>Are you sure you want to discard your review?</span>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => setShowCancelConfirm(false)}
-                              className="px-3 py-1.5 hover:bg-destructive/10 rounded-md transition-colors"
-                            >
-                              Keep editing
-                            </button>
-                            <button
-                              onClick={() => {
-                                setUserRating(0);
-                                setUserReview("");
-                                setShowCancelConfirm(false);
-                              }}
-                              className="px-3 py-1.5 bg-destructive text-destructive-foreground rounded-md font-medium hover:bg-destructive/90 transition-colors"
-                            >
-                              Discard
-                            </button>
+                {customReviews.find(r => r.user_id === currentUser?.id) ? (
+                  (() => {
+                    const myReview = customReviews.find(r => r.user_id === currentUser?.id)!;
+                    return (
+                      <div className="space-y-3">
+                        <h3 className="text-base font-semibold text-foreground mb-3 flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-primary" /> Your Review
+                        </h3>
+                        <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 space-y-3 max-w-3xl">
+                          <div className="flex items-center gap-1">
+                            {[1,2,3,4,5].map(s => (
+                              <Star key={s} className={`w-5 h-5 ${s <= myReview.rating ? "text-yellow-400 fill-yellow-400" : "text-muted-foreground/30"}`} />
+                            ))}
                           </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    <div className="flex justify-end gap-2">
-                      {(userRating > 0 || userReview.length > 0) && (
-                        <motion.button
-                          whileTap={{ scale: 0.95 }}
-                          onClick={handleCancelClick}
-                          className="px-4 py-2.5 rounded-xl border border-border/40 text-foreground hover:bg-muted/40 transition-colors text-sm font-medium flex items-center gap-1.5"
-                        >
-                          <XCircle className="w-4 h-4" /> Cancel
-                        </motion.button>
-                      )}
-                      <motion.button
-                        whileTap={{ scale: 0.95 }}
-                        onClick={handlePostReview}
-                        disabled={
-                          !userRating ||
-                          !userReview.trim() ||
-                          reviewLoading ||
-                          showCancelConfirm
-                        }
-                        className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-md shadow-primary/20"
-                      >
-                        {reviewLoading ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Send className="w-4 h-4" />
-                        )}
-                        Post Review
-                      </motion.button>
+                          <p className="text-sm text-foreground/80 leading-relaxed">{myReview.content}</p>
+                          <p className="text-xs text-muted-foreground">{new Date(myReview.created_at).toLocaleDateString()}</p>
+                          <AnimatePresence>
+                            {reviewToDelete === myReview.id ? (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-3 flex items-start gap-3"
+                              >
+                                <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                                <div className="flex-1">
+                                  <p className="text-sm text-destructive font-medium">Delete this review?</p>
+                                  <p className="text-xs text-destructive/70 mt-0.5">This cannot be undone.</p>
+                                </div>
+                                <div className="flex gap-2 shrink-0">
+                                  <button onClick={() => setReviewToDelete(null)} className="px-3 py-1.5 text-xs rounded-md bg-muted hover:bg-muted/80 transition-colors">Cancel</button>
+                                  <button onClick={() => handleDeleteReview(myReview.id)} className="px-3 py-1.5 text-xs rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors font-medium">Delete</button>
+                                </div>
+                              </motion.div>
+                            ) : (
+                              <motion.button
+                                initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                                onClick={() => setReviewToDelete(myReview.id)}
+                                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" /> Delete review
+                              </motion.button>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <div className="space-y-4">
+                    <h3 className="text-base font-semibold text-foreground">Write a Review</h3>
+                    <div className="space-y-4 max-w-3xl">
+                      <StarRating value={userRating} onChange={setUserRating} />
+                      <div className="flex flex-col gap-3">
+                        <textarea
+                          value={userReview}
+                          onChange={(e) => setUserReview(e.target.value)}
+                          placeholder="Share your thoughts with the Tune-In community..."
+                          className="w-full bg-muted/30 border border-border/40 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 transition-colors min-h-[90px] resize-none"
+                        />
+                        <AnimatePresence>
+                          {showCancelConfirm && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: "auto" }}
+                              exit={{ opacity: 0, height: 0 }}
+                              className="bg-destructive/10 border border-destructive/20 text-destructive text-sm px-4 py-3 rounded-lg flex items-center justify-between"
+                            >
+                              <span>Are you sure you want to discard your review?</span>
+                              <div className="flex gap-2">
+                                <button onClick={() => setShowCancelConfirm(false)} className="px-3 py-1.5 hover:bg-destructive/10 rounded-md transition-colors">Keep editing</button>
+                                <button onClick={() => { setUserRating(0); setUserReview(""); setShowCancelConfirm(false); }} className="px-3 py-1.5 bg-destructive text-destructive-foreground rounded-md font-medium hover:bg-destructive/90 transition-colors">Discard</button>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                        <div className="flex justify-end gap-2">
+                          {(userRating > 0 || userReview.length > 0) && (
+                            <motion.button
+                              whileTap={{ scale: 0.95 }}
+                              onClick={handleCancelClick}
+                              className="px-4 py-2.5 rounded-xl border border-border/40 text-foreground hover:bg-muted/40 transition-colors text-sm font-medium flex items-center gap-1.5"
+                            >
+                              <XCircle className="w-4 h-4" /> Cancel
+                            </motion.button>
+                          )}
+                          <motion.button
+                            whileTap={{ scale: 0.95 }}
+                            onClick={handlePostReview}
+                            disabled={!userRating || !userReview.trim() || reviewLoading || showCancelConfirm}
+                            className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-md shadow-primary/20"
+                          >
+                            {reviewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                            Post Review
+                          </motion.button>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
 
               {/* ── REVIEWS (Tune-In Local + TMDB Global) ── */}
@@ -925,13 +1076,30 @@ const MovieDetailDialog = ({ open, onOpenChange, movie }: Props) => {
                             <span className="text-muted-foreground">/5</span>
                           </div>
                           {currentUser?.id === r.user_id && (
-                            <button
-                              onClick={() => handleDeleteReview(r.id)}
-                              className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
-                              title="Delete review"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <AnimatePresence>
+                              {reviewToDelete === r.id ? (
+                                <motion.div
+                                  initial={{ opacity: 0, height: 0 }}
+                                  animate={{ opacity: 1, height: "auto" }}
+                                  exit={{ opacity: 0, height: 0 }}
+                                  className="bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2 flex items-center gap-2 text-xs"
+                                >
+                                  <AlertTriangle className="w-3.5 h-3.5 text-destructive shrink-0" />
+                                  <span className="text-destructive flex-1">Delete this review?</span>
+                                  <button onClick={() => setReviewToDelete(null)} className="px-2 py-1 bg-muted rounded text-muted-foreground hover:bg-muted/80">No</button>
+                                  <button onClick={() => handleDeleteReview(r.id)} className="px-2 py-1 bg-destructive text-destructive-foreground rounded font-medium">Yes</button>
+                                </motion.div>
+                              ) : (
+                                <motion.button
+                                  initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                                  onClick={() => setReviewToDelete(r.id)}
+                                  className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+                                  title="Delete review"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </motion.button>
+                              )}
+                            </AnimatePresence>
                           )}
                         </div>
                       </div>

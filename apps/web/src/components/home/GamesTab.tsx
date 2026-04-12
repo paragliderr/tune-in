@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Film, Loader2, ChevronLeft, ChevronRight, ArrowLeft, Tv, Filter, SortAsc, LayoutGrid } from "lucide-react";
-import { tmdb, OTT_PROVIDERS, type TMDBMovie, type TMDBGenre } from "@/lib/tmdb";
+import { Search, Gamepad2, Star, Loader2, ChevronLeft, ChevronRight, ArrowLeft, Filter, SortAsc, Check } from "lucide-react";
+import { igdb, type IGDBGame } from "@/lib/igdb";
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
@@ -13,22 +13,22 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import MovieCard from "./MovieCard";
-import MovieDetailDialog from "./MovieDetailDialog";
+import GameCard from "./GameCard";
+import GameDetailDialog from "./GameDetailDialog";
 
-/* ── Scrollable horizontal row with arrows ── */
+/* ── Scrollable horizontal row ── */
 const HorizontalRow = ({
   title,
   icon,
-  movies,
+  games,
   onSelect,
   onTitleClick,
   colorClass,
 }: {
   title: string;
   icon?: React.ReactNode;
-  movies: TMDBMovie[];
-  onSelect: (m: TMDBMovie) => void;
+  games: IGDBGame[];
+  onSelect: (g: IGDBGame) => void;
   onTitleClick?: () => void;
   colorClass?: string;
 }) => {
@@ -48,7 +48,7 @@ const HorizontalRow = ({
     const el = scrollRef.current;
     if (el) el.addEventListener("scroll", checkScroll, { passive: true });
     return () => el?.removeEventListener("scroll", checkScroll);
-  }, [movies]);
+  }, [games]);
 
   const scroll = (dir: "left" | "right") => {
     const el = scrollRef.current;
@@ -76,7 +76,6 @@ const HorizontalRow = ({
       </div>
 
       <div className="relative group">
-        {/* Left arrow */}
         {canLeft && (
           <button
             onClick={() => scroll("left")}
@@ -88,14 +87,13 @@ const HorizontalRow = ({
 
         <div
           ref={scrollRef}
-          className="flex gap-4 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+          className="flex gap-4 overflow-x-auto pb-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
         >
-          {movies.map((m, i) => (
-            <MovieCard key={m.id} movie={m} index={i} onClick={() => onSelect(m)} />
+          {games.map((g, i) => (
+            <GameCard key={g.id} game={g} index={i} onClick={() => onSelect(g)} />
           ))}
         </div>
 
-        {/* Right arrow */}
         {canRight && (
           <button
             onClick={() => scroll("right")}
@@ -109,13 +107,12 @@ const HorizontalRow = ({
   );
 };
 
-/* ── Category listing view ── */
+/* ── Category View ── */
 type CategoryDef = {
   key: string;
   title: string;
   icon?: React.ReactNode;
-  colorClass?: string;
-  fetcher: (page: number) => Promise<{ results: TMDBMovie[]; total_pages: number }>;
+  fetcher: (page: number) => Promise<{ results: IGDBGame[]; total_pages: number }>;
 };
 
 const CategoryView = ({
@@ -125,9 +122,9 @@ const CategoryView = ({
 }: {
   category: CategoryDef;
   onBack: () => void;
-  onSelect: (m: TMDBMovie) => void;
+  onSelect: (g: IGDBGame) => void;
 }) => {
-  const [movies, setMovies] = useState<TMDBMovie[]>([]);
+  const [games, setGames] = useState<IGDBGame[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -136,8 +133,8 @@ const CategoryView = ({
     setLoading(true);
     try {
       const data = await category.fetcher(p);
-      setMovies(data.results);
-      setTotalPages(Math.min(data.total_pages, 20));
+      setGames(data.results);
+      setTotalPages(data.total_pages);
       setPage(p);
     } catch {}
     setLoading(false);
@@ -171,18 +168,17 @@ const CategoryView = ({
       ) : (
         <>
           <div className="flex flex-wrap gap-4">
-            {movies.map((m, i) => (
-              <MovieCard key={m.id} movie={m} index={i} onClick={() => onSelect(m)} />
+            {games.map((g, i) => (
+              <GameCard key={g.id} game={g} index={i} onClick={() => onSelect(g)} />
             ))}
           </div>
 
-          {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-2 pt-4 pb-8">
               <button
                 disabled={page <= 1}
                 onClick={() => loadPage(page - 1)}
-                className="px-3 py-1.5 rounded-lg text-sm border border-border/40 hover:bg-muted/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="px-3 py-1.5 rounded-lg text-sm border border-border/40 hover:bg-muted/40 disabled:opacity-30 transition-colors"
               >
                 Previous
               </button>
@@ -192,7 +188,7 @@ const CategoryView = ({
               <button
                 disabled={page >= totalPages}
                 onClick={() => loadPage(page + 1)}
-                className="px-3 py-1.5 rounded-lg text-sm border border-border/40 hover:bg-muted/40 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="px-3 py-1.5 rounded-lg text-sm border border-border/40 hover:bg-muted/40 disabled:opacity-30 transition-colors"
               >
                 Next
               </button>
@@ -204,58 +200,49 @@ const CategoryView = ({
   );
 };
 
-/* ── Main CinemaTab ── */
-const CinemaTab = () => {
+/* ── Main GamesTab ── */
+const GamesTab = () => {
   const [query, setQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<TMDBMovie[]>([]);
+  const [searchResults, setSearchResults] = useState<IGDBGame[]>([]);
   const [searching, setSearching] = useState(false);
 
-  const [trending, setTrending] = useState<TMDBMovie[]>([]);
-  const [topMovies, setTopMovies] = useState<TMDBMovie[]>([]);
-  const [topTV, setTopTV] = useState<TMDBMovie[]>([]);
-  const [ottData, setOttData] = useState<Record<number, TMDBMovie[]>>({});
+  const [popular, setPopular] = useState<IGDBGame[]>([]);
+  const [topRated, setTopRated] = useState<IGDBGame[]>([]);
+  const [anticipated, setAnticipated] = useState<IGDBGame[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const [selectedMovie, setSelectedMovie] = useState<TMDBMovie | null>(null);
+  const [selectedGameId, setSelectedGameId] = useState<number | null>(null);
   const [activeCategory, setActiveCategory] = useState<CategoryDef | null>(null);
-  const [searchTypeFilter, setSearchTypeFilter] = useState<"all" | "movie" | "tv">("all");
+  const [searchPlatformFilter, setSearchPlatformFilter] = useState<string>("All");
   const [searchGenreFilter, setSearchGenreFilter] = useState<string>("All");
   const [searchSort, setSearchSort] = useState<"newest" | "oldest" | "relevance">("relevance");
   const [searchPage, setSearchPage] = useState(1);
-  const [rawSearchResults, setRawSearchResults] = useState<TMDBMovie[]>([]);
+  const [rawSearchResults, setRawSearchResults] = useState<IGDBGame[]>([]);
   const [isInitialLoading, setInitialLoading] = useState(false);
-  const [genres, setGenres] = useState<TMDBGenre[]>([]);
 
-  // Listen for movie open events from PersonView
+  // Listen for game open from CompanyView
   useEffect(() => {
     const handler = (e: any) => {
-      const movie = e.detail?.movie as TMDBMovie;
-      if (movie) setSelectedMovie(movie);
+      const gameId = e.detail?.gameId as number;
+      if (gameId) setSelectedGameId(gameId);
     };
-    window.addEventListener("openMovie", handler);
-    return () => window.removeEventListener("openMovie", handler);
+    window.addEventListener("openGame", handler);
+    return () => window.removeEventListener("openGame", handler);
   }, []);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [t, tm, tt, ...otts] = await Promise.all([
-          tmdb.trending(),
-          tmdb.topRatedMovies(),
-          tmdb.topRatedTV(),
-          ...OTT_PROVIDERS.map((p) => tmdb.discoverByProvider(p.id, "movie")),
+        const [p, tr, ant] = await Promise.all([
+          igdb.popular(),
+          igdb.topRated(),
+          igdb.anticipated(),
         ]);
-        setTrending(t.slice(0, 15));
-        setTopMovies(tm.slice(0, 15));
-        setTopTV(tt.slice(0, 15));
-        const od: Record<number, TMDBMovie[]> = {};
-        OTT_PROVIDERS.forEach((p, i) => {
-          od[p.id] = otts[i].slice(0, 15);
-        });
-        setOttData(od);
+        setPopular(p);
+        setTopRated(tr);
+        setAnticipated(ant);
       } catch (e) {
-        setError("Could not load movies. Please check your TMDB API key.");
+        console.error("IGDB Loading Error:", e);
       } finally {
         setLoading(false);
       }
@@ -273,24 +260,13 @@ const CinemaTab = () => {
     setSearching(true);
     setInitialLoading(true);
     try {
-      const [{ results }, mg, tg] = await Promise.all([
-        tmdb.searchDeep(q),
-        genres.length === 0 ? tmdb.movieGenres() : Promise.resolve(genres),
-        genres.length === 0 ? tmdb.tvGenres() : Promise.resolve([] as TMDBGenre[]),
-      ]);
-      
+      const results = await igdb.searchDeep(q);
       setRawSearchResults(results);
       setSearchPage(1);
-      
-      // Reset filters for new search query
-      setSearchTypeFilter("all");
+      // Reset filters when a new search query is typed
+      setSearchPlatformFilter("All");
       setSearchGenreFilter("All");
       setSearchSort("relevance");
-
-      if (genres.length === 0) {
-        const all = [...mg, ...tg].filter((g, i, a) => a.findIndex(x => x.id === g.id) === i);
-        setGenres(all);
-      }
     } catch (e) {
       console.error("Search Error:", e);
       setRawSearchResults([]);
@@ -298,7 +274,7 @@ const CinemaTab = () => {
       setSearching(false);
       setInitialLoading(false);
     }
-  }, [genres]);
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => handleSearch(query), 400);
@@ -306,60 +282,42 @@ const CinemaTab = () => {
   }, [query]);
 
   const filteredSortedResults = useMemo(() => {
-    let list = rawSearchResults.filter(m => {
-      const typeOk = searchTypeFilter === "all" || m.media_type === searchTypeFilter;
-      const genre = genres.find(g => g.name === searchGenreFilter);
-      const genreOk = searchGenreFilter === "All" || (genre && m.genre_ids?.includes(genre.id));
-      return typeOk && genreOk;
+    let list = rawSearchResults.filter(g => {
+      const platOk = searchPlatformFilter === "All" || g.platforms?.some(p => p.name === searchPlatformFilter);
+      const genreOk = searchGenreFilter === "All" || g.genres?.some(gn => gn.name === searchGenreFilter);
+      return platOk && genreOk;
     });
 
     if (searchSort !== "relevance") {
       list = [...list].sort((a, b) => {
-        const dateA = a.release_date || a.first_air_date || "";
-        const dateB = b.release_date || b.first_air_date || "";
-        return searchSort === "newest" ? dateB.localeCompare(dateA) : dateA.localeCompare(dateB);
+        const dateA = a.first_release_date || 0;
+        const dateB = b.first_release_date || 0;
+        return searchSort === "newest" ? dateB - dateA : dateA - dateB;
       });
     }
 
     return list;
-  }, [rawSearchResults, searchTypeFilter, searchGenreFilter, searchSort, genres]);
+  }, [rawSearchResults, searchPlatformFilter, searchGenreFilter, searchSort]);
 
   const totalPagesPool = Math.ceil(filteredSortedResults.length / 20);
   const paginatedResults = filteredSortedResults.slice((searchPage - 1) * 20, searchPage * 20);
 
-  /* Category definitions — each maps to a paginated fetcher */
   const categories: Record<string, CategoryDef> = {
-    trending: {
-      key: "trending",
-      title: "🔥 Talk of the Town",
-      fetcher: (p) => tmdb.trendingPage(p),
+    popular: {
+      key: "popular",
+      title: "Popular Now",
+      fetcher: (p) => igdb.popularPage(p),
     },
-    topMovies: {
-      key: "topMovies",
-      title: "Top Rated Movies",
-      icon: <Film className="w-4 h-4 text-primary-foreground" />,
-      colorClass: "from-primary to-purple-800",
-      fetcher: (p) => tmdb.topRatedMoviesPage(p),
+    topRated: {
+      key: "topRated",
+      title: "All-Time Classics",
+      fetcher: (p) => igdb.topRatedPage(p),
     },
-    topTV: {
-      key: "topTV",
-      title: "Most Watched Shows",
-      icon: <Film className="w-4 h-4 text-primary-foreground" />,
-      colorClass: "from-indigo-600 to-blue-800",
-      fetcher: (p) => tmdb.topRatedTVPage(p),
+    anticipated: {
+      key: "anticipated",
+      title: "Most Anticipated",
+      fetcher: (p) => igdb.anticipatedPage(p),
     },
-    ...Object.fromEntries(
-      OTT_PROVIDERS.map((p) => [
-        `ott_${p.id}`,
-        {
-          key: `ott_${p.id}`,
-          title: `Popular on ${p.name}`,
-          colorClass: p.color,
-          icon: <span className="text-[10px] font-bold text-primary-foreground">{p.name.charAt(0)}</span>,
-          fetcher: (page: number) => tmdb.discoverByProviderPage(p.id, "movie", page),
-        },
-      ])
-    ),
   };
 
   if (loading) {
@@ -370,24 +328,10 @@ const CinemaTab = () => {
     );
   }
 
-  if (error) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-center px-6">
-        <div className="space-y-2">
-          <Film className="w-10 h-10 text-muted-foreground mx-auto" />
-          <p className="text-muted-foreground text-sm">{error}</p>
-          <p className="text-xs text-muted-foreground/60">
-            Add your TMDB key as VITE_TMDB_API_KEY in environment variables.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-6xl mx-auto px-4 md:px-8 py-6 space-y-8">
-        {/* Search bar */}
+        {/* Search Bar */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -398,7 +342,7 @@ const CinemaTab = () => {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search movies, shows..."
+              placeholder="Search for games..."
               className="w-full bg-muted/30 border border-border/40 rounded-2xl pl-11 pr-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/60 focus:shadow-[0_0_15px_hsl(var(--primary)/0.1)] transition-all"
             />
             {searching && (
@@ -409,7 +353,6 @@ const CinemaTab = () => {
 
         <AnimatePresence mode="wait">
           {query.trim().length >= 2 ? (
-            /* ── Search results ── */
             <motion.div
               key="search"
               initial={{ opacity: 0 }}
@@ -447,57 +390,66 @@ const CinemaTab = () => {
                     </DropdownMenuContent>
                   </DropdownMenu>
 
-                  {/* Type filter */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-9 bg-muted/20 border-border/40 text-xs gap-2 hover:bg-muted/40 transition-all rounded-xl">
-                        <LayoutGrid className="w-3.5 h-3.5 text-muted-foreground" />
-                        <span className="text-muted-foreground">Type:</span>
-                        <span className="font-semibold capitalize">{searchTypeFilter}</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-48 bg-card/95 backdrop-blur-xl border-border/40 rounded-xl">
-                      <DropdownMenuLabel className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Content Type</DropdownMenuLabel>
-                      <DropdownMenuSeparator className="bg-border/40" />
-                      <DropdownMenuRadioGroup value={searchTypeFilter} onValueChange={(v) => { setSearchTypeFilter(v as any); setSearchPage(1); }}>
-                        <DropdownMenuRadioItem value="all" className="text-sm cursor-pointer py-2">All Content</DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="movie" className="text-sm cursor-pointer py-2">Movies Only</DropdownMenuRadioItem>
-                        <DropdownMenuRadioItem value="tv" className="text-sm cursor-pointer py-2">TV Shows Only</DropdownMenuRadioItem>
-                      </DropdownMenuRadioGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {/* Platform filter */}
+                  {(() => {
+                    const platforms = ["All", ...Array.from(new Set(rawSearchResults.flatMap(g => g.platforms?.map(p => p.name) ?? [])))];
+                    return platforms.length > 1 ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm" className="h-9 bg-muted/20 border-border/40 text-xs gap-2 hover:bg-muted/40 transition-all rounded-xl">
+                            <Filter className="w-3.5 h-3.5 text-muted-foreground" />
+                            <span className="text-muted-foreground">Platform:</span>
+                            <span className="font-semibold truncate max-w-[80px]">{searchPlatformFilter === "All" ? "Any" : searchPlatformFilter}</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56 max-h-[300px] overflow-y-auto bg-card/95 backdrop-blur-xl border-border/40 rounded-xl">
+                          <DropdownMenuLabel className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Filter Platform</DropdownMenuLabel>
+                          <DropdownMenuSeparator className="bg-border/40" />
+                          <DropdownMenuRadioGroup value={searchPlatformFilter} onValueChange={(v) => { setSearchPlatformFilter(v); setSearchPage(1); }}>
+                            {platforms.map(p => (
+                              <DropdownMenuRadioItem key={p} value={p} className="text-sm cursor-pointer py-2">
+                                {p === "All" ? "All Platforms" : p}
+                              </DropdownMenuRadioItem>
+                            ))}
+                          </DropdownMenuRadioGroup>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : null;
+                  })()}
 
                   {/* Genre filter */}
-                  {genres.length > 0 && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-9 bg-muted/20 border-border/40 text-xs gap-2 hover:bg-muted/40 transition-all rounded-xl">
-                          <Filter className="w-3.5 h-3.5 text-muted-foreground" />
-                          <span className="text-muted-foreground">Genre:</span>
-                          <span className="font-semibold truncate max-w-[80px]">{searchGenreFilter === "All" ? "Any" : searchGenreFilter}</span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-56 max-h-[300px] overflow-y-auto bg-card/95 backdrop-blur-xl border-border/40 rounded-xl">
-                        <DropdownMenuLabel className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Filter Genre</DropdownMenuLabel>
-                        <DropdownMenuSeparator className="bg-border/40" />
-                        <DropdownMenuRadioGroup value={searchGenreFilter} onValueChange={(v) => { setSearchGenreFilter(v); setSearchPage(1); }}>
-                          <DropdownMenuRadioItem value="All" className="text-sm cursor-pointer py-2">All Genres</DropdownMenuRadioItem>
-                          {genres.map(g => (
-                            <DropdownMenuRadioItem key={g.id} value={g.name} className="text-sm cursor-pointer py-2">
-                              {g.name}
-                            </DropdownMenuRadioItem>
-                          ))}
-                        </DropdownMenuRadioGroup>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
+                  {(() => {
+                    const genres = ["All", ...Array.from(new Set(rawSearchResults.flatMap(g => g.genres?.map(gn => gn.name) ?? [])))];
+                    return genres.length > 1 ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm" className="h-9 bg-muted/20 border-border/40 text-xs gap-2 hover:bg-muted/40 transition-all rounded-xl">
+                            <Filter className="w-3.5 h-3.5 text-muted-foreground" />
+                            <span className="text-muted-foreground">Genre:</span>
+                            <span className="font-semibold truncate max-w-[80px]">{searchGenreFilter === "All" ? "Any" : searchGenreFilter}</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56 max-h-[300px] overflow-y-auto bg-card/95 backdrop-blur-xl border-border/40 rounded-xl">
+                          <DropdownMenuLabel className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Filter Genre</DropdownMenuLabel>
+                          <DropdownMenuSeparator className="bg-border/40" />
+                          <DropdownMenuRadioGroup value={searchGenreFilter} onValueChange={(v) => { setSearchGenreFilter(v); setSearchPage(1); }}>
+                            {genres.map(g => (
+                              <DropdownMenuRadioItem key={g} value={g} className="text-sm cursor-pointer py-2">
+                                {g === "All" ? "All Genres" : g}
+                              </DropdownMenuRadioItem>
+                            ))}
+                          </DropdownMenuRadioGroup>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : null;
+                  })()}
                 </div>
               </div>
               {isInitialLoading ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                   {Array.from({ length: 10 }).map((_, i) => (
                     <div key={i} className="space-y-3">
-                      <Skeleton className="aspect-[2/3] w-full rounded-2xl" />
+                      <Skeleton className="aspect-[3/4] w-full rounded-2xl" />
                       <div className="space-y-1">
                         <Skeleton className="h-4 w-3/4" />
                         <Skeleton className="h-3 w-1/2" />
@@ -508,11 +460,11 @@ const CinemaTab = () => {
               ) : (
                 <>
                   {paginatedResults.length === 0 && !searching ? (
-                    <p className="text-sm text-muted-foreground pt-8">No results found with the current filters.</p>
+                    <p className="text-sm text-muted-foreground pt-8">No games found with the current filters.</p>
                   ) : (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                      {paginatedResults.map((m, i) => (
-                        <MovieCard key={m.id} movie={m} index={i} onClick={() => setSelectedMovie(m)} />
+                      {paginatedResults.map((g, i) => (
+                        <GameCard key={g.id} game={g} index={i} onClick={() => setSelectedGameId(g.id)} />
                       ))}
                     </div>
                   )}
@@ -547,17 +499,15 @@ const CinemaTab = () => {
                   )}
                 </>
               )}
-            </motion.div>
+          </motion.div>
           ) : activeCategory ? (
-            /* ── Category listing ── */
             <CategoryView
               key={activeCategory.key}
               category={activeCategory}
               onBack={() => setActiveCategory(null)}
-              onSelect={setSelectedMovie}
+              onSelect={(g) => setSelectedGameId(g.id)}
             />
           ) : (
-            /* ── Browse rows ── */
             <motion.div
               key="browse"
               initial={{ opacity: 0 }}
@@ -566,51 +516,40 @@ const CinemaTab = () => {
               className="space-y-10"
             >
               <HorizontalRow
-                title="🔥 Talk of the Town"
-                movies={trending}
-                onSelect={setSelectedMovie}
-                onTitleClick={() => setActiveCategory(categories.trending)}
+                title="Popular Now"
+                icon={<div className="w-7 h-7 rounded-lg bg-gradient-to-br from-green-600 to-emerald-800 flex items-center justify-center"><Gamepad2 className="w-4 h-4 text-primary-foreground" /></div>}
+                games={popular}
+                onSelect={(g) => setSelectedGameId(g.id)}
+                onTitleClick={() => setActiveCategory(categories.popular)}
               />
 
               <HorizontalRow
-                title="Top Rated Movies"
-                icon={<div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary to-purple-800 flex items-center justify-center"><Film className="w-4 h-4 text-primary-foreground" /></div>}
-                movies={topMovies}
-                onSelect={setSelectedMovie}
-                onTitleClick={() => setActiveCategory(categories.topMovies)}
+                title="All-Time Classics"
+                icon={<div className="w-7 h-7 rounded-lg bg-gradient-to-br from-yellow-600 to-orange-800 flex items-center justify-center"><Star className="w-4 h-4 text-primary-foreground" /></div>}
+                games={topRated}
+                onSelect={(g) => setSelectedGameId(g.id)}
+                onTitleClick={() => setActiveCategory(categories.topRated)}
               />
 
               <HorizontalRow
-                title="Most Watched Shows"
-                icon={<div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-600 to-blue-800 flex items-center justify-center"><Film className="w-4 h-4 text-primary-foreground" /></div>}
-                movies={topTV}
-                onSelect={setSelectedMovie}
-                onTitleClick={() => setActiveCategory(categories.topTV)}
+                title="Most Anticipated"
+                icon={<div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-600 to-indigo-800 flex items-center justify-center"><Gamepad2 className="w-4 h-4 text-primary-foreground" /></div>}
+                games={anticipated}
+                onSelect={(g) => setSelectedGameId(g.id)}
+                onTitleClick={() => setActiveCategory(categories.anticipated)}
               />
-
-              {OTT_PROVIDERS.map((p) => (
-                <HorizontalRow
-                  key={p.id}
-                  title={`Popular on ${p.name}`}
-                  colorClass={p.color}
-                  icon={<img src={p.logo} alt={p.name} className="w-7 h-7 rounded-lg object-cover" />}
-                  movies={ottData[p.id] || []}
-                  onSelect={setSelectedMovie}
-                  onTitleClick={() => setActiveCategory(categories[`ott_${p.id}`])}
-                />
-              ))}
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      <MovieDetailDialog
-        open={!!selectedMovie}
-        onOpenChange={(o) => !o && setSelectedMovie(null)}
-        movie={selectedMovie}
+      <GameDetailDialog
+        open={!!selectedGameId}
+        onOpenChange={(o) => !o && setSelectedGameId(null)}
+        gameId={selectedGameId}
       />
     </div>
   );
 };
 
-export default CinemaTab;
+export default GamesTab;

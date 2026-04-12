@@ -23,6 +23,7 @@ import PostCard from "@/components/home/PostCard";
 import PostDetailDialog from "@/components/home/PostDetailDialog";
 import MaintenanceScreen from "@/components/home/MaintenanceScreen";
 import CinemaTab from "@/components/home/CinemaTab";
+import GamesTab from "@/components/home/GamesTab";
 import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
 import CreatePostDialog from "@/components/home/CreatePostDialog";
 import MemberHoverCard from "@/components/home/MemberHoverCard";
@@ -52,8 +53,11 @@ const Home = () => {
 
   const location = useLocation();
   const isCinemaRoute = location.pathname === "/cinema";
+  const isGamesRoute = location.pathname === "/games";
 
-  const [activeTab, setActiveTab] = useState<HomeTab>(isCinemaRoute ? "Cinema" : "Clubs");
+  const [activeTab, setActiveTab] = useState<HomeTab>(
+    isCinemaRoute ? "Cinema" : isGamesRoute ? "Games" : "Clubs"
+  );
   const [activeClub, setActiveClub] = useState<string | null>(null);
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
   const { slug, postId } = useParams();
@@ -63,6 +67,8 @@ const Home = () => {
     setActiveTab(tab);
     if (tab === "Cinema") {
       navigate("/cinema");
+    } else if (tab === "Games") {
+      navigate("/games");
     } else if (tab === "Clubs") {
       navigate("/home");
     }
@@ -646,6 +652,17 @@ const Home = () => {
             className="flex-1 flex overflow-hidden"
           >
             <CinemaTab />
+          </motion.div>
+        ) : activeTab === "Games" ? (
+          <motion.div
+            key="games"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="flex-1 flex overflow-hidden"
+          >
+            <GamesTab />
           </motion.div>
         ) : (
           <motion.div className="flex-1 flex">

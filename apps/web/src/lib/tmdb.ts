@@ -110,6 +110,27 @@ export interface TMDBCast {
   total_episode_count?: number;
 }
 
+export interface TMDBPersonCredit {
+  id: number;
+  title?: string;
+  name?: string;
+  poster_path: string | null;
+  release_date?: string;
+  first_air_date?: string;
+  vote_average: number;
+  vote_count: number;
+  media_type: "movie" | "tv";
+  character?: string;
+  overview: string;
+  genre_ids: number[];
+  backdrop_path: string | null;
+}
+
+export interface TMDBGenre {
+  id: number;
+  name: string;
+}
+
 export interface TMDBWatchProvider {
   provider_id: number;
   provider_name: string;
@@ -155,10 +176,24 @@ export const tmdb = {
   topRatedTVPage: (page = 1) =>
     get<{ results: TMDBMovie[]; total_pages: number }>("/tv/top_rated", { page: String(page) }),
 
-  search: (query: string) =>
-    get<{ results: TMDBMovie[] }>("/search/multi", { query }).then((r) =>
-      r.results.filter((m) => m.media_type === "movie" || m.media_type === "tv")
-    ),
+  search: (query: string, page = 1) =>
+    get<{ results: TMDBMovie[]; total_pages: number; total_results: number }>("/search/multi", { query, page: String(page) }).then((r) => ({
+      results: r.results.filter((m) => m.media_type === "movie" || m.media_type === "tv"),
+      total_pages: r.total_pages,
+      total_results: r.total_results
+    })),
+
+  searchDeep: async (query: string, maxPages = 5) => {
+    const pages = Array.from({ length: maxPages }, (_, i) => i + 1);
+    const responses = await Promise.all(pages.map(p => tmdb.search(query, p)));
+    const allResults = responses.flatMap(r => r.results);
+    // Remove duplicates by ID (sometimes people/movies collide in multi search)
+    const unique = allResults.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
+    return {
+      results: unique,
+      total_results: responses[0]?.total_results || unique.length
+    };
+  },
 
   movieDetail: (id: number) => get<TMDBDetail>(`/movie/${id}`),
   tvDetail: (id: number) => get<TMDBDetail>(`/tv/${id}`),
@@ -199,6 +234,29 @@ export const tmdb = {
       sort_by: "popularity.desc",
       page: String(page),
     }),
+
+  // Person discography
+  personCredits: (personId: number): Promise<{ cast: TMDBPersonCredit[] }> =>
+    get<{ cast: TMDBPersonCredit[]; crew: TMDBPersonCredit[] }>(`/person/${personId}/combined_credits`)
+      .then(r => ({ cast: r.cast.filter(m => m.poster_path && (m.title || m.name)).sort((a, b) => {
+        const da = a.release_date || a.first_air_date || "";
+        const db = b.release_date || b.first_air_date || "";
+        return db.localeCompare(da);
+      }) })),
+
+  // Separate movie/TV search
+  searchMovies: (query: string, page = 1) =>
+    get<{ results: TMDBMovie[]; total_pages: number }>("/search/movie", { query, page: String(page) }),
+
+  searchTV: (query: string, page = 1) =>
+    get<{ results: TMDBMovie[]; total_pages: number }>("/search/tv", { query, page: String(page) }),
+
+  // Genres
+  movieGenres: () =>
+    get<{ genres: TMDBGenre[] }>("/genre/movie/list").then(r => r.genres),
+
+  tvGenres: () =>
+    get<{ genres: TMDBGenre[] }>("/genre/tv/list").then(r => r.genres),
 };
 
 export const OTT_PROVIDERS = [
