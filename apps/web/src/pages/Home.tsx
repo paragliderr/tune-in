@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import useGlobalPresence from "@/hooks/useGlobalPresence";
 
 import AIHomeFeed from "@/components/AIHomeFeed";
-
+import MessagesTab from "@/components/home/MessagesTab";
 import HomeNavbar, { type HomeTab } from "@/components/home/HomeNavbar";
 import SidebarClubList from "@/components/home/SidebarClubList";
 import FeedFilterBar from "@/components/home/FeedFilterBar";
@@ -72,6 +72,9 @@ const Home = () => {
     } else if (tab === "Clubs") {
       navigate("/home");
     }
+      else if (tab === "Messages") {
+      navigate("/messages");
+    } 
   };
 
   const [hoveredMember, setHoveredMember] = useState<any>(null);
@@ -663,6 +666,17 @@ const Home = () => {
             className="flex-1 flex overflow-hidden"
           >
             <GamesTab />
+          </motion.div>
+        ) : activeTab === "Messages" ? (
+          <motion.div
+            key="messages"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="flex-1 flex overflow-hidden"
+          >
+            <MessagesTab />
           </motion.div>
         ) : (
           <motion.div className="flex-1 flex">

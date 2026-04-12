@@ -79,7 +79,14 @@ const App = () => (
               </AuthGuard>
             }
           />
-
+          <Route
+            path="/messages"
+            element={
+              <AuthGuard>
+                <Home />
+              </AuthGuard>
+            }
+          />
           
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
