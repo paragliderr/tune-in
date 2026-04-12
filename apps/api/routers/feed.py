@@ -1,7 +1,7 @@
 import os
-import redis
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from supabase import create_client
+from upstash_redis import Redis
 from dotenv import load_dotenv
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -14,7 +14,7 @@ NUM_POSTS = 20
 POSTS_PER_ENGINE = 15
 
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
-redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+redis_client = Redis.from_env()
 
 @router.get("/api/v1/feed/{user_id}")
 def generate_blended_feed(user_id: str):
@@ -35,25 +35,30 @@ def generate_blended_feed(user_id: str):
         }).execute()
         explore_posts = [match["id"] for match in matches.data]
 
-    final_feed_meta = []
-    seen_posts = set()
-    max_len = max(len(exploit_posts), len(explore_posts))
+    if not exploit_posts and not explore_posts:
+        print(f"No Redis or explore data for {user_id}, using Supabase fallback")
+        recent = supabase.table("posts").select("id").order("created_at", desc=True).limit(NUM_POSTS).execute()
+        final_feed_meta = [{"post_id": r["id"], "source": "explore"} for r in recent.data]
+    else:
+        final_feed_meta = []
+        seen_posts = set()
+        max_len = max(len(exploit_posts), len(explore_posts))
 
-    for i in range(max_len):
-        if i < len(exploit_posts):
-            post_id = exploit_posts[i]
-            if post_id not in seen_posts:
-                final_feed_meta.append({"post_id": post_id, "source": "exploit"})
-                seen_posts.add(post_id)
+        for i in range(max_len):
+            if i < len(exploit_posts):
+                post_id = exploit_posts[i]
+                if post_id not in seen_posts:
+                    final_feed_meta.append({"post_id": post_id, "source": "exploit"})
+                    seen_posts.add(post_id)
 
-        if i < len(explore_posts):
-            post_id = explore_posts[i]
-            if post_id not in seen_posts:
-                final_feed_meta.append({"post_id": post_id, "source": "explore"})
-                seen_posts.add(post_id)
+            if i < len(explore_posts):
+                post_id = explore_posts[i]
+                if post_id not in seen_posts:
+                    final_feed_meta.append({"post_id": post_id, "source": "explore"})
+                    seen_posts.add(post_id)
 
-        if len(final_feed_meta) >= NUM_POSTS:
-            break
+            if len(final_feed_meta) >= NUM_POSTS:
+                break
 
     if not final_feed_meta:
         return {"user_id": user_id, "feed_length": 0, "feed": []}
