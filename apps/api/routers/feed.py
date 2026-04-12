@@ -16,7 +16,7 @@ POSTS_PER_ENGINE = 15
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
 redis_client = Redis.from_env()
 
-@router.get("/v1/feed/{user_id}")
+@router.get("/feed/{user_id}")
 def generate_blended_feed(user_id: str):
     print(f"Generating Blended Feed for User: {user_id}")
 
