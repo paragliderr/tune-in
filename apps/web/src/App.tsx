@@ -80,7 +80,7 @@ const App = () => (
             }
           />
           <Route
-            path="/messages"
+            path="/messages/:messageUsername?"
             element={
               <AuthGuard>
                 <Home />

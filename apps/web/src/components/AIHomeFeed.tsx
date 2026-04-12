@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { fetchTrendingFeed } from '@/lib/api';
 import PostCard from "@/components/home/PostCard";
 
 interface AIHomeFeedProps {
@@ -53,10 +54,8 @@ export default function AIHomeFeed({ currentUserId, onOpenDetail }: AIHomeFeedPr
       setIsLoading(true);
       setError(null);
       try {
-        const response = await fetch(`http://127.0.0.1:8000/api/v1/feed/${currentUserId}`);
-        if (!response.ok) throw new Error(`Feed fetch failed: ${response.status}`);
-        const data = await response.json();
-        const mapped = (data.feed ?? []).map(mapAPIPostToCard);
+        const result = await fetchTrendingFeed(currentUserId);
+        const mapped = (result.feed ?? []).map(mapAPIPostToCard);
         setPosts(mapped);
       } catch (err) {
         console.error("AI Feed Error:", err);

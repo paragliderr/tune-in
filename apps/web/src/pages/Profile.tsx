@@ -2,7 +2,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { motion } from "framer-motion";
-import { ArrowLeft, Link2, Search, Gamepad2, Film, Star, FileText } from "lucide-react";
+import { ArrowLeft, Link2, Search, Gamepad2, Film, Star, FileText, MessageCircle } from "lucide-react";
 import PostCard from "@/components/home/PostCard";
 import PostDetailDialog from "@/components/home/PostDetailDialog";
 import MovieDetailDialog from "@/components/home/MovieDetailDialog";
@@ -169,14 +169,23 @@ export default function Profile() {
     <div className="min-h-screen bg-background text-foreground pb-20">
       {/* HEADER */}
       <div className="border-b border-border sticky top-0 bg-background/80 backdrop-blur-xl z-20">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center gap-4">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-2 rounded-lg hover:bg-muted transition"
+        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => navigate(-1)}
+              className="p-2 rounded-lg hover:bg-muted transition"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <h1 className="font-semibold text-lg">@{profile.username}</h1>
+          </div>
+          <button 
+            onClick={() => navigate(`/messages/${profile.username}`)}
+            className="p-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition flex items-center gap-2"
           >
-            <ArrowLeft size={18} />
+            <MessageCircle size={18} />
+            <span className="text-sm font-medium hidden sm:inline">Message</span>
           </button>
-          <h1 className="font-semibold text-lg">@{profile.username}</h1>
         </div>
       </div>
 

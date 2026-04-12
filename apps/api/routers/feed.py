@@ -8,21 +8,33 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 env_path = os.path.join(current_dir, "..", ".env")
 load_dotenv(dotenv_path=env_path)
 
-router = APIRouter()
+router = APIRouter(prefix="/v1")
 
 NUM_POSTS = 20
 POSTS_PER_ENGINE = 15
 
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
-redis_client = Redis.from_env()
+
+redis_client = None
+try:
+    redis_client = Redis.from_env()
+    # Verify connection
+    redis_client.ping()
+except Exception as e:
+    print(f"[WARN] Redis unavailable for feed (skipping exploit engine): {e}")
 
 @router.get("/feed/{user_id}")
 def generate_blended_feed(user_id: str):
     print(f"Generating Blended Feed for User: {user_id}")
 
-    exploit_posts = redis_client.lrange(f"exploit_feed:{user_id}", 0, POSTS_PER_ENGINE - 1)
-    if not exploit_posts:
-        exploit_posts = redis_client.lrange("global_trending", 0, POSTS_PER_ENGINE - 1)
+    exploit_posts = []
+    if redis_client:
+        try:
+            exploit_posts = redis_client.lrange(f"exploit_feed:{user_id}", 0, POSTS_PER_ENGINE - 1)
+            if not exploit_posts:
+                exploit_posts = redis_client.lrange("global_trending", 0, POSTS_PER_ENGINE - 1)
+        except Exception as e:
+            print(f"[WARN] Failed to fetch from Redis: {e}")
 
     explore_posts = []
     user_data = supabase.table("profiles").select("explore_embedding").eq("id", user_id).execute()

@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import useGlobalPresence from "@/hooks/useGlobalPresence";
 
 import AIHomeFeed from "@/components/AIHomeFeed";
-import MessagesTab from "@/components/home/MessagesTab";
+import DMPage from "@/components/dm/DMPage";
 import HomeNavbar, { type HomeTab } from "@/components/home/HomeNavbar";
 import SidebarClubList from "@/components/home/SidebarClubList";
 import FeedFilterBar from "@/components/home/FeedFilterBar";
@@ -51,16 +51,17 @@ const Home = () => {
   const justChangedRef = useRef<Set<string>>(new Set());
   const consumedAnimRef = useRef<Set<string>>(new Set());
 
+  const { slug, postId, messageUsername } = useParams();
   const location = useLocation();
-  const isCinemaRoute = location.pathname === "/cinema";
-  const isGamesRoute = location.pathname === "/games";
+  const isCinemaRoute = location.pathname.startsWith("/cinema");
+  const isGamesRoute = location.pathname.startsWith("/games");
+  const isMessagesRoute = location.pathname.startsWith("/messages");
 
   const [activeTab, setActiveTab] = useState<HomeTab>(
-    isCinemaRoute ? "Cinema" : isGamesRoute ? "Games" : "Clubs"
+    isMessagesRoute ? "Messages" : isCinemaRoute ? "Cinema" : isGamesRoute ? "Games" : "Clubs"
   );
   const [activeClub, setActiveClub] = useState<string | null>(null);
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
-  const { slug, postId } = useParams();
   const navigate = useNavigate();
 
   const handleTabChange = (tab: HomeTab) => {
@@ -71,10 +72,9 @@ const Home = () => {
       navigate("/games");
     } else if (tab === "Clubs") {
       navigate("/home");
-    }
-      else if (tab === "Messages") {
+    } else if (tab === "Messages") {
       navigate("/messages");
-    } 
+    }
   };
 
   const [hoveredMember, setHoveredMember] = useState<any>(null);
@@ -676,7 +676,7 @@ const Home = () => {
             transition={{ duration: 0.2 }}
             className="flex-1 flex overflow-hidden"
           >
-            <MessagesTab />
+            <DMPage messageUsername={messageUsername} onlineUserIds={onlineUserIds} />
           </motion.div>
         ) : (
           <motion.div className="flex-1 flex">
