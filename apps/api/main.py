@@ -3,15 +3,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers import igdb
 
-
 feed_router = None
 update_exploit_data = None
+
+# Try loading optional feed router
 try:
     from routers import feed
     feed_router = feed.router
 except Exception as e:
-    print(f"[WARN] Feed router unavailable (missing env vars?): {e}")
+    print(f"[WARN] Feed router unavailable: {e}")
 
+# Try loading scheduler + exploit updater
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
     from scripts.update_exploit import update_exploit_data as _update
@@ -19,22 +21,30 @@ try:
 except Exception as e:
     print(f"[WARN] Exploit scheduler unavailable: {e}")
 
-# Initialize the background scheduler only if exploit is available
+# Initialize scheduler (OPTIMIZED: every 2 hours)
 scheduler = None
 if update_exploit_data:
     scheduler = BackgroundScheduler()
-    scheduler.add_job(update_exploit_data, 'interval', minutes=15)
+    scheduler.add_job(
+        update_exploit_data,
+        trigger='interval',
+        hours=2,  #  Optimized 
+        max_instances=1,  # prevents overlapping jobs
+        coalesce=True     # merges missed runs
+    )
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Start the trending data scheduler if available
+    # Startup
     if scheduler:
         scheduler.start()
-        print("[OK] Exploit engine scheduler started -- updating every 15 minutes.")
+        print("[OK] Scheduler started — running every 2 hours.")
     else:
-        print("[OK] Running in IGDB-only mode (feed/exploit dependencies not loaded).")
+        print("[OK] Running without scheduler (IGDB-only mode).")
+
     yield
-    # Shutdown: Stop the scheduler if running
+
+    # Shutdown
     if scheduler:
         scheduler.shutdown()
         print("[OK] Scheduler shut down.")
@@ -45,11 +55,12 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# ✅ FIXED CORS (no wildcard, no trailing slash)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:8080",
-        "https://tune-in-three.vercel.app/"
+        "https://tune-in-three.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -59,6 +70,7 @@ app.add_middleware(
 # Include Routers
 if feed_router:
     app.include_router(feed_router)
+
 app.include_router(igdb.router)
 
 modules = ["IGDB Proxy"] + (["Feed"] if feed_router else [])
