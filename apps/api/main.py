@@ -14,18 +14,13 @@ print("HTTPX VERSION:", httpx.__version__)
 
 from routers import auth, users, posts, igdb
 
-feed_router = None
+# 🔥 IMPORTANT: REMOVE SILENT FAILURE
+from routers import feed
+print("🔥 FEED ROUTER IMPORTED")
+
 update_exploit_data = None
 
-# Try loading optional feed router
-try:
-    from routers import feed
-    feed_router = feed.router
-    print("🔥 FEED ROUTER LOADED SUCCESSFULLY")
-except Exception as e:
-    print(f"[WARN] Feed router unavailable: {e}")
-
-# Try loading scheduler + exploit updater
+# Scheduler import
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
     from scripts.update_exploit import update_exploit_data as _update
@@ -52,15 +47,15 @@ if update_exploit_data:
 async def lifespan(app: FastAPI):
     if scheduler:
         scheduler.start()
-        print("[OK] Scheduler started — running every 2 hours.")
+        print("[OK] Scheduler started")
     else:
-        print("[OK] Running without scheduler (IGDB-only mode).")
+        print("[OK] Running without scheduler")
 
     yield
 
     if scheduler:
         scheduler.shutdown()
-        print("[OK] Scheduler shut down.")
+        print("[OK] Scheduler stopped")
 
 # =========================
 # APP INIT
@@ -68,7 +63,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Tune-In Unified Backend",
-    description="IGDB + Feed + Auth + Posts + Users",
     lifespan=lifespan,
 )
 
@@ -96,8 +90,8 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(posts.router, prefix="/api")
 
-if feed_router:
-    app.include_router(feed_router, prefix="/api")
+# 🔥 ALWAYS include feed
+app.include_router(feed.router, prefix="/api")
 
 app.include_router(igdb.router, prefix="/api")
 
@@ -105,14 +99,11 @@ app.include_router(igdb.router, prefix="/api")
 # HEALTH
 # =========================
 
-modules = ["IGDB", "Auth", "Users", "Posts"] + (["Feed"] if feed_router else [])
-
 @app.get("/")
 def health_check():
     return {
-        "status": "The Matrix is online.",
-        "modules": modules,
-        "scheduler": "enabled" if scheduler else "disabled",
+        "status": "online",
+        "modules": ["IGDB", "Auth", "Users", "Posts", "Feed"],
     }
 
 @app.get("/health")
