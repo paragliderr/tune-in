@@ -9,6 +9,12 @@ from torch_geometric.nn import LightGCN
 from torch_geometric.utils import to_undirected
 from build_graph import fetch_graph_from_neo4j
 
+from pathlib import Path
+from dotenv import load_dotenv
+
+env_path = Path(__file__).resolve().parents[3] / "apps" / "api" / ".env"
+load_dotenv(dotenv_path=env_path)
+
 def train_explore_engine():
     print("Loading the PyTorch engine...")
     

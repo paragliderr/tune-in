@@ -6,13 +6,14 @@ import os
 from supabase import create_client, Client
 from dotenv import load_dotenv 
 
-from app.services.alignment_service import generate_post_embedding
-
 load_dotenv() 
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
-supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
+)
 
 class PostCreate(BaseModel):
     title: str
@@ -24,21 +25,17 @@ class PostCreate(BaseModel):
 @router.post("/")
 def create_new_post(post: PostCreate):
     try:
-        vector_list = generate_post_embedding(post.title, post.content)
-        
-        # --- X-RAY VISION ---
         print("\n--- NEW POST INCOMING ---")
-        print(f"Title: {post.title}")
-        print(f"Vector Length: {len(vector_list)} dimensions")
-        print(f"Sample values: {vector_list[:3]}\n")
-        
+        print(f"Title: {post.title}\n")
+
         new_post_data = {
             "user_id": post.user_id,
             "club_id": post.club_id,
             "title": post.title,
             "content": post.content,
-            "embedding": str(vector_list),
+            "embedding": None,  # ✅ handled later by AI engine
         }
+
         if post.image_url:
             new_post_data["image_url"] = post.image_url
         
@@ -46,7 +43,7 @@ def create_new_post(post: PostCreate):
         
         return {
             "status": "success", 
-            "message": "Post aligned and published!", 
+            "message": "Post published!", 
             "post_id": response.data[0]['id']
         }
         

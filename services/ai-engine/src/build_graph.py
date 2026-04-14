@@ -10,9 +10,11 @@ from torch_geometric.data import HeteroData
 from neo4j import GraphDatabase
 from dotenv import load_dotenv
 
-# Resolve explicit path to .env file to prevent loading errors during execution
-current_dir = os.path.dirname(os.path.abspath(__file__))
-env_path = os.path.join(current_dir, "..", ".env")
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Go to project root → then apps/api/.env
+env_path = Path(__file__).resolve().parents[3] / "apps" / "api" / ".env"
 load_dotenv(dotenv_path=env_path)
 
 neo4j_uri = os.getenv("NEO4J_URI")

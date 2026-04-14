@@ -26,7 +26,7 @@ services:
       - postgres
       - neo4j
 
-  ai-engine:
-    build: ./services/ai-engine
-    ports:
-      - "8001:8001"
+  # ai-engine:
+  #   build: ./services/ai-engine
+  #   ports:
+  #     - "8001:8001"
