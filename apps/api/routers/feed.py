@@ -2,11 +2,13 @@ import os
 from fastapi import APIRouter
 from supabase import create_client
 from upstash_redis import Redis
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-env_path = os.path.join(current_dir, "..", ".env")
-load_dotenv(dotenv_path=env_path)
+# current_dir = os.path.dirname(os.path.abspath(__file__))
+# env_path = os.path.join(current_dir, "..", ".env")
+# load_dotenv(dotenv_path=env_path)
+
+print("🔥 FEED ROUTER LOADED")
 
 router = APIRouter(prefix="/v1")
 
