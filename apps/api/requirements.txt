@@ -6,7 +6,7 @@ supabase==2.4.0
 upstash-redis==1.0.0
 apscheduler==3.10.4
 
-pydantic==2.6.4
+pydantic[email]==2.6.4
 
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
