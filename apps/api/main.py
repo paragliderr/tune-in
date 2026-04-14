@@ -1,5 +1,3 @@
-#EDITED THIS FILE
-
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,9 +8,11 @@ import httpx
 print("SUPABASE VERSION:", supabase.__version__)
 print("HTTPX VERSION:", httpx.__version__)
 
-# Routers
-from routers import igdb
-from app.routers import auth, users, posts
+# =========================
+# ROUTERS IMPORT
+# =========================
+
+from routers import auth, users, posts, igdb
 
 feed_router = None
 update_exploit_data = None
@@ -32,7 +32,10 @@ try:
 except Exception as e:
     print(f"[WARN] Exploit scheduler unavailable: {e}")
 
-# Initialize scheduler (every 2 hours)
+# =========================
+# SCHEDULER SETUP
+# =========================
+
 scheduler = None
 if update_exploit_data:
     scheduler = BackgroundScheduler()
@@ -60,13 +63,20 @@ async def lifespan(app: FastAPI):
         scheduler.shutdown()
         print("[OK] Scheduler shut down.")
 
+# =========================
+# APP INIT (IMPORTANT ORDER)
+# =========================
+
 app = FastAPI(
     title="Tune-In Unified Backend",
     description="IGDB + Feed + Auth + Posts + Users",
     lifespan=lifespan,
 )
 
+# =========================
 # CORS
+# =========================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

@@ -10,6 +10,10 @@ from pydantic import BaseModel
 # env_path = os.path.join(current_dir, "..", ".env")
 # load_dotenv(dotenv_path=env_path)
 
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 CLIENT_ID = os.getenv("IGDB_CLIENT_ID")
 CLIENT_SECRET = os.getenv("IGDB_CLIENT_SECRET")

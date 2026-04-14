@@ -8,6 +8,11 @@ from upstash_redis import Redis
 # env_path = os.path.join(current_dir, "..", ".env")
 # load_dotenv(dotenv_path=env_path)
 
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
 print("🔥 FEED ROUTER LOADED")
 
 router = APIRouter(prefix="/v1")
