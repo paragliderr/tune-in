@@ -69,9 +69,9 @@ app.add_middleware(
 
 # Include Routers
 if feed_router:
-    app.include_router(feed_router)
+    app.include_router(feed_router,prefix="/api")
 
-app.include_router(igdb.router)
+app.include_router(igdb.router, prefix="/api")
 
 modules = ["IGDB Proxy"] + (["Feed"] if feed_router else [])
 
