@@ -1,7 +1,10 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# Routers
 from routers import igdb
+from app.routers import auth, users, posts
 
 feed_router = None
 update_exploit_data = None
@@ -21,16 +24,16 @@ try:
 except Exception as e:
     print(f"[WARN] Exploit scheduler unavailable: {e}")
 
-# Initialize scheduler (OPTIMIZED: every 2 hours)
+# Initialize scheduler (every 2 hours)
 scheduler = None
 if update_exploit_data:
     scheduler = BackgroundScheduler()
     scheduler.add_job(
         update_exploit_data,
-        trigger='interval',
-        hours=2,  #  Optimized 
-        max_instances=1,  # prevents overlapping jobs
-        coalesce=True     # merges missed runs
+        trigger="interval",
+        hours=2,
+        max_instances=1,
+        coalesce=True,
     )
 
 @asynccontextmanager
@@ -50,35 +53,54 @@ async def lifespan(app: FastAPI):
         print("[OK] Scheduler shut down.")
 
 app = FastAPI(
-    title="Tune-In AI Backend",
-    description="Unified API for discovery (IGDB/TMDB) and personalized feeds.",
-    lifespan=lifespan
+    title="Tune-In Unified Backend",
+    description="IGDB + Feed + Auth + Posts + Users",
+    lifespan=lifespan,
 )
 
-# ✅ FIXED CORS (no wildcard, no trailing slash)
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:8080",
-        "https://tune-in-three.vercel.app"
+        "http://127.0.0.1:8080",
+        "https://tune-in-three.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include Routers
-if feed_router:
-    app.include_router(feed_router,prefix="/api")
+# =========================
+# ROUTERS (UNIFIED)
+# =========================
 
+# Core app routes
+app.include_router(auth.router, prefix="/api")
+app.include_router(users.router, prefix="/api")
+app.include_router(posts.router, prefix="/api")
+
+# Feed (optional)
+if feed_router:
+    app.include_router(feed_router, prefix="/api")
+
+# IGDB
 app.include_router(igdb.router, prefix="/api")
 
-modules = ["IGDB Proxy"] + (["Feed"] if feed_router else [])
+# =========================
+# HEALTH
+# =========================
+
+modules = ["IGDB", "Auth", "Users", "Posts"] + (["Feed"] if feed_router else [])
 
 @app.get("/")
 def health_check():
     return {
         "status": "The Matrix is online.",
-        "engines": ["Explore", "Exploit"] if update_exploit_data else ["IGDB Only"],
-        "modules": modules
+        "modules": modules,
+        "scheduler": "enabled" if scheduler else "disabled",
     }
+
+@app.get("/health")
+def health():
+    return {"health": "healthy"}
