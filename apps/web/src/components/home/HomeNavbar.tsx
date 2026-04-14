@@ -3,8 +3,9 @@ import { motion } from "framer-motion";
 import { User } from "lucide-react";
 import ProfileDropdown from "./ProfileDropdown";
 import { supabase } from "@/lib/supabase";
+import { Link, useLocation } from "react-router-dom"; // <-- Added Router imports
 
-import { Users, Film, Gamepad2, MessageCircle } from "lucide-react";
+import { Users, Film, Gamepad2, MessageCircle, Trophy } from "lucide-react"; // <-- Added Trophy icon
 
 export const TABS = [
   { name: "Clubs", id: "Clubs", icon: Users },
@@ -26,6 +27,8 @@ const HomeNavbar = ({ activeTab, onTabChange }: HomeNavbarProps) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [username, setUsername] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  
+  const location = useLocation(); // Keep track of current route for Leaderboard tab
 
   useEffect(() => {
     const load = async () => {
@@ -120,6 +123,8 @@ const HomeNavbar = ({ activeTab, onTabChange }: HomeNavbarProps) => {
     };
   }, [currentUserId]);
 
+  const isLeaderboardActive = location.pathname === "/leaderboard";
+
   return (
     <nav className="sticky top-0 z-50 flex items-center justify-between px-4 md:px-8 py-3 border-b border-border bg-background/80 backdrop-blur-xl">
       <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
@@ -129,7 +134,7 @@ const HomeNavbar = ({ activeTab, onTabChange }: HomeNavbarProps) => {
             onClick={() => onTabChange(tab.id as HomeTab)}
             className="flex items-center gap-2 relative px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors duration-200"
           >
-            {activeTab === tab.id && (
+            {activeTab === tab.id && !isLeaderboardActive && (
               <motion.div
                 layoutId="tab-bg"
                 className="absolute inset-0 rounded-xl bg-primary/10 border border-primary/30 shadow-[0_0_12px_hsl(270_70%_60%/0.15)]"
@@ -138,7 +143,7 @@ const HomeNavbar = ({ activeTab, onTabChange }: HomeNavbarProps) => {
             )}
             <motion.div
               className={`relative z-10 flex items-center gap-1.5 ${
-                activeTab === tab.id ? "text-primary" : "text-muted-foreground"
+                activeTab === tab.id && !isLeaderboardActive ? "text-primary" : "text-muted-foreground"
               }`}
               whileHover={{ scale: 1.05 }}
               transition={{ duration: 0.15 }}
@@ -151,7 +156,7 @@ const HomeNavbar = ({ activeTab, onTabChange }: HomeNavbarProps) => {
                 </span>
               )}
             </motion.div>
-            {activeTab === tab.id && (
+            {activeTab === tab.id && !isLeaderboardActive && (
               <motion.div
                 layoutId="tab-underline"
                 className="absolute bottom-0 left-1/4 right-1/4 h-0.5 bg-primary rounded-full"
@@ -160,6 +165,30 @@ const HomeNavbar = ({ activeTab, onTabChange }: HomeNavbarProps) => {
             )}
           </button>
         ))}
+
+        {/* --- LEADERBOARD LINK --- */}
+        <Link
+          to="/leaderboard"
+          className="flex items-center gap-2 relative px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors duration-200"
+        >
+          {isLeaderboardActive && (
+             <div className="absolute inset-0 rounded-xl bg-primary/10 border border-primary/30 shadow-[0_0_12px_hsl(270_70%_60%/0.15)]" />
+          )}
+          <motion.div
+            className={`relative z-10 flex items-center gap-1.5 ${
+              isLeaderboardActive ? "text-primary" : "text-muted-foreground"
+            }`}
+            whileHover={{ scale: 1.05 }}
+            transition={{ duration: 0.15 }}
+          >
+            <Trophy className="w-4 h-4" />
+            <span>Leaderboard</span>
+          </motion.div>
+          {isLeaderboardActive && (
+             <div className="absolute bottom-0 left-1/4 right-1/4 h-0.5 bg-primary rounded-full" />
+          )}
+        </Link>
+
       </div>
 
       <div className="relative shrink-0 ml-4 flex items-center gap-3">

@@ -14,7 +14,7 @@ const ProfileDropdown = ({ open, onClose, username }: ProfileDropdownProps) => {
 
   const items = [
     { label: "Profile", icon: User, action: username ? `/user/${username}` : "/profile" },
-    { label: "Account Settings", icon: Settings, action: "/settings" },
+    // { label: "Account Settings", icon: Settings, action: "/settings" },
     { label: "Saved", icon: Bookmark, action: "/saved" },
     { label: "Logout", icon: LogOut, action: "logout" },
   ];

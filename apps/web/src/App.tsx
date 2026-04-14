@@ -12,6 +12,7 @@ import Home from "./pages/Home";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import Profile from "./pages/Profile";
+import Leaderboard from "./pages/Leaderboard"; 
 
 const queryClient = new QueryClient();
 
@@ -49,6 +50,16 @@ const App = () => (
             element={
               <AuthGuard>
                 <Profile />
+              </AuthGuard>
+            }
+          />
+
+          {/* <-- Added Leaderboard Route --> */}
+          <Route
+            path="/leaderboard"
+            element={
+              <AuthGuard>
+                <Leaderboard />
               </AuthGuard>
             }
           />
