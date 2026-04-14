@@ -1,0 +1,77 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# TuneIn AI Engine — Production Slim Build (< 2GB)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── Stage 1: Builder ──────────────────────────────────────────────────────
+FROM python:3.11-slim AS builder
+
+WORKDIR /install
+
+# Build dependencies (removed later)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc g++ curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip (important for PyG wheels)
+RUN pip install --upgrade pip
+
+# ── Install CPU-only PyTorch (CRITICAL) ────────────────────────────────────
+RUN pip install --no-cache-dir \
+    torch==2.2.2 \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# ── Install PyTorch Geometric (MATCHED with torch 2.2.2) ───────────────────
+RUN pip install --no-cache-dir \
+    torch_geometric==2.5.3
+
+# ── Install PyG compiled ops (REQUIRED for HGTConv) ────────────────────────
+RUN pip install --no-cache-dir \
+    pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv \
+    -f https://data.pyg.org/whl/torch-2.2.2+cpu.html
+
+# ── Install remaining dependencies ─────────────────────────────────────────
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+
+# ── Stage 2: Runtime ──────────────────────────────────────────────────────
+FROM python:3.11-slim AS runtime
+
+WORKDIR /app
+
+# Minimal runtime libs
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy installed packages
+COPY --from=builder /usr/local/lib/python3.11 /usr/local/lib/python3.11
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# ── COPY ONLY AI ENGINE (IMPORTANT) ────────────────────────────────────────
+COPY . .
+
+# Ensure Python can resolve modules
+ENV PYTHONPATH=/app
+
+# ── Runtime config ─────────────────────────────────────────────────────────
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    OMP_NUM_THREADS=4
+
+# Neo4j config (override in docker-compose)
+ENV NEO4J_URI=bolt://neo4j:7687 \
+    NEO4J_USER=neo4j \
+    NEO4J_PASSWORD=password
+
+# HGT config
+ENV HGT_HIDDEN=128 \
+    HGT_OUT=64 \
+    HGT_HEADS=4 \
+    HGT_LAYERS=2 \
+    HGT_CACHE_TTL=300
+
+EXPOSE 8000
+
+# ── Start FastAPI ─────────────────────────────────────────────────────────
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

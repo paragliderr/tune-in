@@ -1,0 +1,64 @@
+# ================= PYTHON =================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# ================= VIRTUAL ENVS =================
+venv/
+.venv/
+env/
+
+# ================= NODE / FRONTEND =================
+node_modules/
+apps/web/node_modules/
+apps/web/.next/
+apps/web/dist/
+apps/web/build/
+
+# ================= ML MODELS / CACHE =================
+model_cache/
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.safetensors
+.cache/
+huggingface/
+transformers/
+
+# ================= DATA =================
+*.csv
+*.parquet
+*.jsonl
+
+# ================= TEST / DEV =================
+.pytest_cache/
+tests/
+coverage/
+.coverage
+
+# ================= NOTEBOOKS =================
+*.ipynb
+.ipynb_checkpoints/
+
+# ================= GIT =================
+.git/
+.gitignore
+
+# ================= ENV / SECRETS =================
+.env
+.env.*
+
+# ================= OS =================
+.DS_Store
+
+# ================= LOGS =================
+*.log
+
+# ================= DOCKER =================
+docker-compose.yml
