@@ -9,13 +9,10 @@ print("SUPABASE VERSION:", supabase.__version__)
 print("HTTPX VERSION:", httpx.__version__)
 
 # =========================
-# ROUTERS IMPORT
+# ROUTERS IMPORT (FIXED)
 # =========================
 
-from routers import auth, users, posts, igdb
-
-# 🔥 IMPORTANT: REMOVE SILENT FAILURE
-from routers import feed
+from apps.api.routers import auth, users, posts, igdb, feed
 print("🔥 FEED ROUTER IMPORTED")
 
 update_exploit_data = None
@@ -89,10 +86,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(posts.router, prefix="/api")
-
-# 🔥 ALWAYS include feed
 app.include_router(feed.router, prefix="/api")
-
 app.include_router(igdb.router, prefix="/api")
 
 # =========================
