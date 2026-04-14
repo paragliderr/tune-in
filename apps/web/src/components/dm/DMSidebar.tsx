@@ -22,9 +22,12 @@ const ConvoItem = ({
   index: number;
 }) => (
   <motion.button
-    initial={{ opacity: 0, x: -20 }}
+    layout
+    initial={false}
     animate={{ opacity: 1, x: 0 }}
-    transition={{ delay: index * 0.04, type: "spring", stiffness: 300, damping: 25 }}
+    transition={{ duration: 0.15 }}
+    whileTap={{ scale: 0.97 }}
+    whileHover={{ scale: 1.01 }}
     onClick={onSelect}
     className={`w-full flex items-center gap-3 px-3 py-3 rounded-r-xl transition-all duration-200 group relative ${
       isSelected
@@ -94,10 +97,22 @@ const DMSidebar = ({
   searchQuery,
   onSearchChange,
 }: DMSidebarProps) => {
+  const filteredPeople = people
+    .filter((p) =>
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.lastMessage.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    .sort((a, b) => {
+      const timeA = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+      const timeB = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+      return timeB - timeA;
+    });
+
   return (
     <motion.aside 
-      initial={{ x: -20, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
+      initial={{ opacity: 0, x: -10 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.25, ease: "easeOut" }}
       className="w-80 border-r border-border flex flex-col bg-background h-full"
     >
       
@@ -106,43 +121,61 @@ const DMSidebar = ({
         <h2 className="text-xl font-bold">Messages</h2>
 
         <div className="relative flex items-center">
-          <Search className="absolute left-3 w-4 h-4 text-gray-400" />
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="absolute left-3"
+          >
+            <Search className="w-4 h-4 text-white/90" />
+          </motion.div>
           <input
             type="text"
-            placeholder="Search..."
+            placeholder="Search people..."
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full pl-10 py-2.5 bg-white border border-gray-200 rounded-md text-sm text-black placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all shadow-sm"
+            className="w-full pl-10 pr-8 py-2.5 bg-muted/40 border border-border/50 rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all backdrop-blur-md"
           />
+          {searchQuery && (
+            <button
+              onClick={() => onSearchChange("")}
+              className="absolute right-3 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              ✕
+            </button>
+          )}
         </div>
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto scrollbar-hide">
-        {people.length > 0 ? (
-          <div className="py-2">
-            {people.map((c, i) => (
-              <ConvoItem
-                key={c.id}
-                convo={c}
-                isSelected={selectedId === c.id}
-                onSelect={() => onSelect(c)}
-                index={i}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-            <div className="w-12 h-12 rounded-full bg-muted/20 flex items-center justify-center mb-4">
-              <Search className="w-6 h-6 text-muted-foreground/40" />
-            </div>
-            <p className="text-sm font-medium text-foreground">No conversations yet</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {searchQuery ? "No results found for your search." : "Click on a profile to message someone and start chatting."}
-            </p>
-          </div>
-        )}
+<div className="flex-1 overflow-y-auto scrollbar-hide">
+  {filteredPeople.length > 0 ? (
+    <motion.div layout className="py-2">
+      {filteredPeople.map((c, i) => (
+        <ConvoItem
+          key={c.id}
+          convo={c}
+          isSelected={selectedId === c.id}
+          onSelect={() => onSelect(c)}
+          index={i}
+        />
+      ))}
+    </motion.div>
+  ) : (
+    <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+      <div className="w-12 h-12 rounded-full bg-muted/20 flex items-center justify-center mb-4">
+        <Search className="w-6 h-6 text-muted-foreground/40" />
       </div>
+      <p className="text-sm font-medium text-foreground">
+        No conversations yet
+      </p>
+      <p className="text-xs text-muted-foreground mt-1">
+        {searchQuery
+          ? "No results found for your search."
+          : "Click on a profile to message someone and start chatting."}
+      </p>
+    </div>
+  )}
+</div>
     </motion.aside>
   );
 };

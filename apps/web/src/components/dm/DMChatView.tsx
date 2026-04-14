@@ -15,19 +15,28 @@ const MessageBubble = ({
   message, 
   index, 
   onImageClick,
-  recipientLastRead
+  recipientLastRead,
+  isGrouped,
+  isLastMessage
 }: { 
   message: Message; 
   index: number; 
   onImageClick: (url: string) => void;
   recipientLastRead: string | null;
+  isGrouped: boolean;
+  isLastMessage: boolean;
 }) => {
   const isMe = message.sender === "me";
-  const isRead = isMe && recipientLastRead && message.createdAt && (new Date(message.createdAt) <= new Date(recipientLastRead));
+
+  const isRead =
+    isMe &&
+    recipientLastRead &&
+    message.createdAt &&
+    new Date(message.createdAt) <= new Date(recipientLastRead);
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      initial={{ opacity: 0, y: 12, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{
         delay: index * 0.05,
@@ -35,51 +44,55 @@ const MessageBubble = ({
         stiffness: 400,
         damping: 30,
       }}
-      className={`flex ${isMe ? "justify-end" : "justify-start"} group mb-4 lowercase`}
+      className={`flex ${isMe ? "justify-end" : "justify-start"} group ${
+        isGrouped ? "mb-1" : "mb-4"
+      }`}
     >
       <div className={`max-w-[85%] sm:max-w-[70%] flex flex-col ${isMe ? "items-end" : "items-start"}`}>
+        
         <motion.div
           whileHover={{ scale: 1.01 }}
-          transition={{ duration: 0.15 }}
           className={`overflow-hidden rounded-2xl relative shadow-sm border border-white/5 ${
             isMe
               ? "bg-white text-black"
               : "bg-zinc-800/80 text-white backdrop-blur-md"
           } ${isMe ? "rounded-br-none" : "rounded-bl-none"}`}
         >
-          {message.image_url && (
-            <motion.div 
-              initial={{ filter: "blur(10px)" }}
-              animate={{ filter: "blur(0px)" }}
-              className="relative overflow-hidden bg-muted/10 group/img"
-              onClick={() => onImageClick(message.image_url!)}
-            >
-              <img 
-                src={message.image_url} 
-                alt="Shared content" 
-                className="w-full h-auto max-h-[350px] object-cover cursor-zoom-in transition-transform duration-500 hover:scale-[1.03]" 
-              />
-              <div className="absolute inset-0 bg-black/20 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
-                <Maximize2 className="text-white w-6 h-6 drop-shadow-lg" />
-              </div>
-            </motion.div>
-          )}
-          
           {message.text && (
             <div className="px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words">
               {message.text}
             </div>
           )}
-        </motion.div>
-        
-        <span
-          className={`text-[10px] text-muted-foreground/60 px-1 mt-1 font-medium flex items-center gap-1 ${isMe ? "justify-end" : "justify-start"}`}
-        >
-          {message.time}
-          {isMe && (
-            <CheckCheck className={`w-3 h-3 ${isRead ? "text-blue-500" : "text-zinc-500"}`} />
+          {message.image_url && (
+            <div 
+              className="max-w-full overflow-hidden cursor-zoom-in group-relative"
+              onClick={() => onImageClick(message.image_url!)}
+            >
+              <img 
+                src={message.image_url} 
+                alt="Shared" 
+                className="max-h-[300px] w-auto object-cover hover:scale-[1.02] transition-transform duration-500"
+              />
+            </div>
           )}
-        </span>
+        </motion.div>
+
+        {/* ⏱ TIME */}
+        {!isGrouped && (
+          <span className="text-[10px] text-muted-foreground/60 px-1 mt-1 font-medium flex items-center gap-1">
+            {message.time}
+            {isMe && (
+              <CheckCheck className={`w-3 h-3 ${isRead ? "text-blue-500" : "text-zinc-500"}`} />
+            )}
+          </span>
+        )}
+
+        {/* 👁 SEEN LABEL */}
+        {isMe && isLastMessage && isRead && (
+          <span className="text-[10px] text-blue-400 mt-1 pr-1 font-medium">
+            Seen
+          </span>
+        )}
       </div>
     </motion.div>
   );
@@ -95,9 +108,16 @@ const DMChatView = ({ conversation, onBack }: DMChatViewProps) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [recipientLastRead, setRecipientLastRead] = useState<string | null>(null);
+   const [recipientLastRead, setRecipientLastRead] = useState<string | null>(null);
+  const [myLastReadAt, setMyLastReadAt] = useState<string | null>(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const [showScrollDown, setShowScrollDown] = useState(false);
   
   const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const typingSendTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingReceiveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingChannelRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
 
@@ -108,8 +128,52 @@ const DMChatView = ({ conversation, onBack }: DMChatViewProps) => {
   }, []);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    setTimeout(() => {
+      bottomRef.current?.scrollIntoView({ behavior: "auto" });
+    }, 50);
   }, [displayMessages]);
+
+  useEffect(() => {
+    if (!conversation.id || !currentUserId) return;
+
+    const channel = supabase.channel(`typing-${conversation.id}`);
+
+    typingChannelRef.current = channel;
+
+    channel
+      .on("broadcast", { event: "typing" }, ({ payload }) => {
+        if (payload.userId === currentUserId) return;
+
+        setIsTyping(true);
+
+        // clear previous decay
+        if (typingReceiveTimeoutRef.current) {
+          clearTimeout(typingReceiveTimeoutRef.current);
+        }
+
+        typingReceiveTimeoutRef.current = setTimeout(() => {
+          setIsTyping(false);
+        }, 1500);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [conversation.id, currentUserId]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const handleScroll = () => {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+      setShowScrollDown(!nearBottom);
+    };
+
+    el.addEventListener("scroll", handleScroll);
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, []);
 
   const fetchMessages = async () => {
     if (!conversation.id || conversation.id.startsWith("new_")) {
@@ -157,10 +221,22 @@ const DMChatView = ({ conversation, onBack }: DMChatViewProps) => {
         .neq("user_id", currentUserId)
         .single();
       
-      if (data) setRecipientLastRead(data.last_read_at);
+      if (data)      setRecipientLastRead(data.last_read_at);
+    };
+
+    const fetchMyRead = async () => {
+      const { data } = await supabase
+        .from("conversation_participants")
+        .select("last_read_at")
+        .eq("conversation_id", conversation.id)
+        .eq("user_id", currentUserId)
+        .single();
+
+      if (data) setMyLastReadAt(data.last_read_at);
     };
 
     fetchRecipientRead();
+    fetchMyRead();
   }, [conversation.id, currentUserId]);
 
   // Realtime subscription
@@ -180,23 +256,29 @@ const DMChatView = ({ conversation, onBack }: DMChatViewProps) => {
         (payload) => {
           const m = payload.new;
           // check if we already have this message (prevent double render on local send)
-          setDisplayMessages((prev) => {
-            if (prev.some((p) => p.id === m.id)) return prev;
-            return [
-              ...prev,
-              {
-                id: m.id,
-                text: m.content,
-                sender: m.sender_id === currentUserId ? "me" : "them",
-                image_url: m.image_url,
-                createdAt: m.created_at,
-                time: new Date(m.created_at).toLocaleTimeString([], {
-                  hour: "numeric",
-                  minute: "2-digit",
-                }),
-              },
-            ];
-          });
+          setDisplayMessages((prev: Message[]) => {
+  if (prev.some((p) => p.id === m.id)) return prev;
+
+  const newMessage: Message = {
+    id: m.id,
+    text: m.content,
+    sender: m.sender_id === currentUserId ? "me" : "them",
+    image_url: m.image_url,
+    createdAt: m.created_at,
+    time: new Date(m.created_at).toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    }),
+  };
+
+  const updated = [...prev, newMessage];
+
+  requestAnimationFrame(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  });
+
+  return updated;
+});
         }
       )
       .subscribe();
@@ -369,9 +451,32 @@ const DMChatView = ({ conversation, onBack }: DMChatViewProps) => {
   };
 
 
+  const formatDay = (dateStr?: string) => {
+    if (!dateStr) return "";
+
+    const date = new Date(dateStr);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+
+    if (date.toDateString() === today.toDateString()) return "Today";
+    if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+
+    return date.toLocaleDateString([], {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const unreadIndex = displayMessages.findIndex((msg) => {
+    if (!myLastReadAt || msg.sender === "me") return false;
+    return new Date(msg.createdAt!) > new Date(myLastReadAt);
+  });
+
   return (
     <motion.div
-      initial={{ opacity: 0 }}
+      initial={false}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.25 }}
@@ -487,18 +592,112 @@ const DMChatView = ({ conversation, onBack }: DMChatViewProps) => {
       </motion.div>
 
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-5 scrollbar-hide">
-        {displayMessages.map((msg, i) => (
-          <MessageBubble 
-            key={msg.id} 
-            message={msg} 
-            index={i} 
-            onImageClick={setPreviewImage} 
-            recipientLastRead={recipientLastRead}
-          />
-        ))}
-        <div ref={bottomRef} />
+      <div 
+        ref={containerRef}
+        className="flex-1 overflow-y-auto px-5 scrollbar-hide flex flex-col"
+      >
+        <div className="mt-auto">
+          {displayMessages.map((msg, i) => {
+            const prevMsg = displayMessages[i - 1];
+
+            const showDaySeparator =
+              !prevMsg ||
+              new Date(prevMsg.createdAt!).toDateString() !==
+                new Date(msg.createdAt!).toDateString();
+
+            const isGrouped =
+              prevMsg &&
+              prevMsg.sender === msg.sender &&
+              new Date(msg.createdAt!).toDateString() === new Date(prevMsg.createdAt!).toDateString() &&
+              new Date(msg.createdAt!).getTime() -
+                new Date(prevMsg.createdAt!).getTime() <
+                5 * 60 * 1000;
+
+            const isLastMessage = i === displayMessages.length - 1;
+
+            return (
+              <div key={msg.id}>
+                {/* 📅 DAY */}
+                {showDaySeparator && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex justify-center my-4"
+                  >
+                    <span className="text-[11px] text-muted-foreground bg-zinc-800/60 px-3 py-1 rounded-full backdrop-blur-md shadow-sm">
+                      {formatDay(msg.createdAt)}
+                    </span>
+                  </motion.div>
+                )}
+
+                {/* 🔴 UNREAD */}
+                {i === unreadIndex && unreadIndex !== -1 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-center gap-3 my-4 px-4"
+                  >
+                    <div className="flex-1 h-[1px] bg-red-500/30" />
+                    <span className="text-[10px] text-red-400 font-semibold tracking-wider">
+                      UNREAD MESSAGES
+                    </span>
+                    <div className="flex-1 h-[1px] bg-red-500/30" />
+                  </motion.div>
+                )}
+
+                <MessageBubble
+                  message={msg}
+                  index={displayMessages.length - 1 === i ? 0 : i}
+                  onImageClick={setPreviewImage}
+                  recipientLastRead={recipientLastRead}
+                  isGrouped={!!isGrouped}
+                  isLastMessage={isLastMessage}
+                />
+              </div>
+            );
+          })}
+          <div ref={bottomRef} />
+        </div>
       </div>
+
+      <AnimatePresence>
+        {isTyping && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="px-5 py-2 text-sm text-muted-foreground flex items-center gap-2"
+          >
+            <span className="text-white/70 italic tracking-wide">typing...</span>
+            <div className="flex gap-1">
+              {[0, 1, 2].map((i) => (
+                <motion.div
+                  key={i}
+                  animate={{ y: [0, -4, 0] }}
+                  transition={{ repeat: Infinity, delay: i * 0.2, duration: 0.8 }}
+                  className="w-1.5 h-1.5 bg-white/60 rounded-full"
+                />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showScrollDown && (
+          <motion.button
+            initial={{ opacity: 0, y: 20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20 }}
+            onClick={() => {
+              bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+            }}
+            className="absolute bottom-24 right-6 bg-zinc-800/80 backdrop-blur-md border border-white/10 px-4 py-2 rounded-full text-white text-xs font-semibold shadow-2xl hover:bg-zinc-700/80 transition-all z-[50]"
+          >
+            ↓ New messages
+          </motion.button>
+        )}
+      </AnimatePresence>
 
       {/* Input area */}
       <motion.div
@@ -531,7 +730,26 @@ const DMChatView = ({ conversation, onBack }: DMChatViewProps) => {
             type="text"
             placeholder={isUploading ? "Uploading image..." : "Type a message..."}
             value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
+            onChange={(e) => {
+              setInputValue(e.target.value);
+
+              if (!typingChannelRef.current) return;
+
+              // debounce sender
+              if (typingSendTimeoutRef.current) {
+                clearTimeout(typingSendTimeoutRef.current);
+              }
+
+              typingSendTimeoutRef.current = setTimeout(() => {
+                typingChannelRef.current.send({
+                  type: "broadcast",
+                  event: "typing",
+                  payload: {
+                    userId: currentUserId,
+                  },
+                });
+              }, 250);
+            }}
             onKeyDown={(e) => e.key === "Enter" && handleSend()}
             disabled={isUploading}
             className="flex-1 bg-transparent py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"

@@ -22,6 +22,7 @@ export interface Conversation {
   online: boolean;
   time: string;
   lastMessage: string;
+  lastMessageAt: string | null;
   unread: number;
 }
 
@@ -175,6 +176,7 @@ export default function DMPage({ messageUsername, onlineUserIds }: DMPageProps) 
               online: false, 
               time: lastMsg ? new Date(lastMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now",
               lastMessage: lastMsgText,
+              lastMessageAt: lastMsg ? lastMsg.created_at : null,
               unread: unreadCount,
             };
           });
