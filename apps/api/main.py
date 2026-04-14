@@ -21,6 +21,7 @@ update_exploit_data = None
 try:
     from routers import feed
     feed_router = feed.router
+    print("🔥 FEED ROUTER LOADED SUCCESSFULLY")
 except Exception as e:
     print(f"[WARN] Feed router unavailable: {e}")
 
@@ -49,7 +50,6 @@ if update_exploit_data:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     if scheduler:
         scheduler.start()
         print("[OK] Scheduler started — running every 2 hours.")
@@ -58,13 +58,12 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
     if scheduler:
         scheduler.shutdown()
         print("[OK] Scheduler shut down.")
 
 # =========================
-# APP INIT (IMPORTANT ORDER)
+# APP INIT
 # =========================
 
 app = FastAPI(
@@ -90,19 +89,16 @@ app.add_middleware(
 )
 
 # =========================
-# ROUTERS (UNIFIED)
+# ROUTERS
 # =========================
 
-# Core app routes
 app.include_router(auth.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(posts.router, prefix="/api")
 
-# Feed (optional)
 if feed_router:
     app.include_router(feed_router, prefix="/api")
 
-# IGDB
 app.include_router(igdb.router, prefix="/api")
 
 # =========================

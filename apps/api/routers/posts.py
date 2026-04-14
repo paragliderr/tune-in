@@ -1,9 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from typing import Optional
-
 from pydantic import BaseModel
 import os
-from supabase import create_client, Client
+from supabase import create_client
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -11,6 +10,9 @@ router = APIRouter(prefix="/posts", tags=["posts"])
 def get_supabase():
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_SERVICE_KEY")
+
+    print("SUPABASE_URL:", url)
+    print("SUPABASE_KEY:", "SET" if key else "MISSING")
 
     if not url or not key:
         raise Exception("Missing SUPABASE env variables")
@@ -33,6 +35,8 @@ def create_new_post(post: PostCreate):
 
         print("\n--- NEW POST INCOMING ---")
         print(f"Title: {post.title}")
+        print(f"User: {post.user_id}")
+        print(f"Club: {post.club_id}")
 
         new_post_data = {
             "user_id": post.user_id,
@@ -47,10 +51,10 @@ def create_new_post(post: PostCreate):
 
         response = supabase.table("posts").insert(new_post_data).execute()
 
-        # 🔥 CRITICAL CHECK (this was missing)
+        print("SUPABASE RAW RESPONSE:", response)
+
         if not response.data:
-            print("SUPABASE ERROR:", response)
-            raise Exception("Insert failed — no data returned")
+            raise Exception(f"Insert failed: {response}")
 
         return {
             "status": "success",
