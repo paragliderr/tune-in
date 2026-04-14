@@ -4,6 +4,12 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from dotenv import load_dotenv
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+env_path = os.path.join(current_dir, "..", ".env")
+load_dotenv(dotenv_path=env_path)
+
 
 CLIENT_ID = os.getenv("IGDB_CLIENT_ID")
 CLIENT_SECRET = os.getenv("IGDB_CLIENT_SECRET")
