@@ -38,6 +38,31 @@ const Onboarding = () => {
   const [bio, setBio] = useState("");
   const [selectedHobbies, setSelectedHobbies] = useState<string[]>([]);
 
+  useEffect(() => {
+    const check = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        navigate("/login");
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("onboarding_completed")
+        .eq("id", user.id)
+        .single();
+
+      if (profile?.onboarding_completed) {
+        navigate("/home", { replace: true });
+      }
+    };
+
+    check();
+  }, []);
+
 const handleUsernameChange = (value: string) => {
   const clean = value.toLowerCase().replace(/[^a-z0-9_]/g, "");
   setUsername(clean);
@@ -169,8 +194,10 @@ if (avatarUrl) {
 
 const { error: profileError } = await supabase
   .from("profiles")
-  .update(updatePayload)
-  .eq("id", user.id);
+  .upsert({
+    id: user.id,
+    ...updatePayload,
+  });
 
 if (profileError) {
   setSaving(false);

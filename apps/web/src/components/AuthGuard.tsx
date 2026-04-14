@@ -46,7 +46,7 @@ const AuthGuard = ({ children }: any) => {
   }, []);
 
   // ⭐ prevent flicker
-  if (loading) return <div />;
+  if (loading) return null;
 
   // ⭐ not logged in
   if (!sessionUser) return <Navigate to="/login" replace />;

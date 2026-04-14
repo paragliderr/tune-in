@@ -66,28 +66,45 @@ const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
- const navigate = useNavigate();
+  const navigate = useNavigate();
+
+  const handlePostLoginRedirect = async (userId: string) => {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("onboarding_completed")
+      .eq("id", userId)
+      .single();
+
+    if (!profile || !profile.onboarding_completed) {
+      navigate("/onboarding", { replace: true });
+    } else {
+      navigate("/home", { replace: true });
+    }
+  };
 
  useEffect(() => {
-   const { data: listener } = supabase.auth.onAuthStateChange(
-     (event, session) => {
-       if (session) {
-         navigate("/home");
-       }
-     },
-   );
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (session?.user && window.location.pathname === "/login") {
+          handlePostLoginRedirect(session.user.id);
+        }
+      },
+    );
 
    return () => listener.subscription.unsubscribe();
  }, []);
 
   const handleLogin = async () => {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
-    if (!error) navigate("/home");
-    else alert(error.message);
+    if (!error && data?.user) {
+      handlePostLoginRedirect(data.user.id);
+    } else if (error) {
+      alert(error.message);
+    }
   };
 
 const handleGoogleLogin = async () => {
