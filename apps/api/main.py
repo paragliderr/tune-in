@@ -4,6 +4,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import supabase
+import httpx
+
+print("SUPABASE VERSION:", supabase.__version__)
+print("HTTPX VERSION:", httpx.__version__)
 
 # Routers
 from routers import igdb

@@ -10,10 +10,12 @@ from supabase import create_client, Client
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
-supabase: Client = create_client(
-    os.getenv("SUPABASE_URL"),
-    os.getenv("SUPABASE_SERVICE_KEY")
-)
+
+def get_supabase():
+    return create_client(
+        os.getenv("SUPABASE_URL"),
+        os.getenv("SUPABASE_SERVICE_KEY")
+    )
 
 class PostCreate(BaseModel):
     title: str
@@ -25,6 +27,8 @@ class PostCreate(BaseModel):
 @router.post("/")
 def create_new_post(post: PostCreate):
     try:
+        supabase = get_supabase()   # 🔥 ADD THIS LINE
+
         print("\n--- NEW POST INCOMING ---")
         print(f"Title: {post.title}\n")
 
@@ -33,7 +37,7 @@ def create_new_post(post: PostCreate):
             "club_id": post.club_id,
             "title": post.title,
             "content": post.content,
-            "embedding": None,  # ✅ handled later by AI engine
+            "embedding": None,
         }
 
         if post.image_url:
