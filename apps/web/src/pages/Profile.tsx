@@ -20,7 +20,8 @@ import {
   Camera,
   Edit2,
   Check,
-  X
+  X,
+  Loader2
 } from "lucide-react";
 
 // Components from your old file
@@ -35,17 +36,17 @@ import { igdb, gameImg, type IGDBGame } from "@/lib/igdb";
 // ─── Connection config ─────────────────────────────────────────────────────
 const CONNECTION_META: Record<
   string,
-  { label: string; icon: React.ReactNode; color: string }
+  { label: string; icon: React.ReactNode; color: string; placeholder: string }
 > = {
-  spotify: { label: "Spotify", icon: <Music size={15} />, color: "#1db954" },
-  github: { label: "GitHub", icon: <Github size={15} />, color: "#aaa" },
-  instagram: { label: "Instagram", icon: <Instagram size={15} />, color: "#e1306c" },
-  linkedin: { label: "LinkedIn", icon: <Linkedin size={15} />, color: "#0a66c2" },
-  steam: { label: "Steam", icon: <Gamepad2 size={15} />, color: "#66c0f4" },
-  leetcode: { label: "LeetCode", icon: <FileText size={15} />, color: "#ffa116" },
-  codolio: { label: "Codolio", icon: <Link2 size={15} />, color: "#a78bfa" },
-  strava: { label: "Strava", icon: <Trophy size={15} />, color: "#fc4c02" },
-  letterboxd: { label: "Letterboxd", icon: <Film size={15} />, color: "#00c030" },
+  spotify: { label: "Spotify", icon: <Music size={15} />, color: "#1db954", placeholder: "Spotify Profile URL" },
+  github: { label: "GitHub", icon: <Github size={15} />, color: "#aaa", placeholder: "GitHub Username" },
+  instagram: { label: "Instagram", icon: <Instagram size={15} />, color: "#e1306c", placeholder: "Instagram Username" },
+  linkedin: { label: "LinkedIn", icon: <Linkedin size={15} />, color: "#0a66c2", placeholder: "LinkedIn URL" },
+  steam: { label: "Steam", icon: <Gamepad2 size={15} />, color: "#66c0f4", placeholder: "Steam ID / URL" },
+  leetcode: { label: "LeetCode", icon: <FileText size={15} />, color: "#ffa116", placeholder: "LeetCode Username" },
+  codolio: { label: "Codolio", icon: <Link2 size={15} />, color: "#a78bfa", placeholder: "Codolio URL" },
+  strava: { label: "Strava", icon: <Trophy size={15} />, color: "#fc4c02", placeholder: "Strava Profile ID" },
+  letterboxd: { label: "Letterboxd", icon: <Film size={15} />, color: "#00c030", placeholder: "Letterboxd Username" },
 };
 
 // ─── UI Helpers ────────────────────────────────────────────────────────────
@@ -100,6 +101,10 @@ export default function UserProfile() {
   const [isEditingBio, setIsEditingBio] = useState(false);
   const [editBioText, setEditBioText] = useState("");
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  
+  const [isEditingConnections, setIsEditingConnections] = useState(false);
+  const [editConnections, setEditConnections] = useState<Record<string, string>>({});
+  const [savingConnections, setSavingConnections] = useState(false);
 
   // Social Stats State
   const [postCount, setPostCount] = useState(0);
@@ -214,7 +219,6 @@ export default function UserProfile() {
           setPosts(mapped);
         }
       } 
-      
       else if (activeTab === "cinema") {
         const { data } = await supabase
           .from("movie_reviews")
@@ -241,7 +245,6 @@ export default function UserProfile() {
           setMovieReviews([]);
         }
       } 
-      
       else if (activeTab === "games") {
         const { data } = await supabase
           .from("game_reviews")
@@ -283,6 +286,26 @@ export default function UserProfile() {
       toast.success("Bio updated successfully!");
     } catch (err: any) {
       toast.error(err.message || "Failed to update bio");
+    }
+  };
+
+  // ── Action: Handle Connections Save ───────────────────────────────────────
+  const handleSaveConnections = async () => {
+    setSavingConnections(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ connections: editConnections })
+        .eq('id', profile.id);
+
+      if (error) throw error;
+      setProfile({ ...profile, connections: editConnections });
+      setIsEditingConnections(false);
+      toast.success("Connections linked successfully!");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update connections.");
+    } finally {
+      setSavingConnections(false);
     }
   };
 
@@ -457,36 +480,84 @@ export default function UserProfile() {
             </div>
           </motion.div>
 
-          {/* Connections Grid */}
-          <div className="space-y-3">
-            <p className="text-xs font-bold tracking-wider text-muted-foreground uppercase px-1">
-              Connections
-            </p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {/* Connections System */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <p className="text-xs font-bold tracking-wider text-muted-foreground uppercase">
+                Connections
+              </p>
+              {isOwnProfile && !isEditingConnections && (
+                <button 
+                  onClick={() => { setEditConnections(profile.connections || {}); setIsEditingConnections(true); }} 
+                  className="text-xs flex items-center gap-1.5 font-medium text-muted-foreground hover:text-foreground transition-colors bg-muted/40 px-2.5 py-1 rounded-md"
+                >
+                  <Edit2 size={12} /> Edit Links
+                </button>
+              )}
+              {isOwnProfile && isEditingConnections && (
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setIsEditingConnections(false)} className="text-xs font-medium text-muted-foreground hover:text-foreground px-2 py-1 transition-colors">
+                    Cancel
+                  </button>
+                  <button onClick={handleSaveConnections} disabled={savingConnections} className="text-xs flex items-center gap-1.5 bg-primary text-primary-foreground font-medium px-3 py-1.5 rounded-md hover:bg-primary/90 transition-all shadow-sm">
+                    {savingConnections ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save
+                  </button>
+                </div>
+              )}
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
               {Object.keys(CONNECTION_META).map((key) => {
                 const meta = CONNECTION_META[key];
-                const url = connections[key];
+                const url = isEditingConnections ? (editConnections[key] || "") : (connections[key] || "");
                 const isLinked = !!url;
+
+                if (isEditingConnections) {
+                  return (
+                    <div key={key} className="flex flex-col gap-1.5 p-3 rounded-xl border border-border/50 bg-card/40 shadow-sm">
+                      <div className="flex items-center gap-2 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                        <span style={{ color: meta.color }}>{meta.icon}</span> {meta.label}
+                      </div>
+                      <input
+                        type="text"
+                        placeholder={meta.placeholder}
+                        value={url}
+                        onChange={(e) => setEditConnections({ ...editConnections, [key]: e.target.value })}
+                        className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-primary/50 transition-colors"
+                      />
+                    </div>
+                  );
+                }
+
                 return (
                   <div
                     key={key}
                     onClick={() => {
-                      if (url) window.open(url, "_blank", "noopener,noreferrer");
+                      // Only redirect if there is a URL and it looks like a valid link.
+                      if (isLinked && url.includes('.')) {
+                        const finalUrl = url.startsWith('http') ? url : `https://${url}`;
+                        window.open(finalUrl, "_blank", "noopener,noreferrer");
+                      }
                     }}
                     className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all ${
                       isLinked
-                        ? "border-border bg-card shadow-sm hover:border-foreground/30 cursor-pointer hover:shadow-md"
-                        : "border-border/40 bg-muted/10 opacity-50"
+                        ? "border-border bg-card shadow-sm hover:border-foreground/30 cursor-pointer hover:shadow-md group"
+                        : "border-border/30 bg-muted/5 opacity-50"
                     }`}
                   >
-                    <span style={{ color: isLinked ? meta.color : "inherit" }}>{meta.icon}</span>
+                    <span 
+                      className={`transition-colors duration-300 ${isLinked ? "group-hover:scale-110" : ""}`}
+                      style={{ color: isLinked ? meta.color : "inherit" }}
+                    >
+                      {meta.icon}
+                    </span>
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-semibold truncate">{meta.label}</div>
                       <div className={`text-[10px] mt-0.5 ${isLinked ? "text-emerald-500 font-medium" : "text-muted-foreground"}`}>
-                        {isLinked ? "Connected" : "Not linked"}
+                        {isLinked ? (url.includes('.') ? "Connected" : `@${url}`) : "Not linked"}
                       </div>
                     </div>
-                    {isLinked && <ExternalLink size={12} className="text-muted-foreground/50 flex-shrink-0" />}
+                    {isLinked && url.includes('.') && <ExternalLink size={12} className="text-muted-foreground/40 group-hover:text-muted-foreground transition-colors flex-shrink-0" />}
                   </div>
                 );
               })}
@@ -494,7 +565,7 @@ export default function UserProfile() {
           </div>
 
           {/* Tabs Menu */}
-          <div className="space-y-6 pt-4">
+          <div className="space-y-6 pt-6">
             <div className="flex gap-1 border-b border-border overflow-x-auto scrollbar-none">
               {tabs.map((t) => (
                 <button
