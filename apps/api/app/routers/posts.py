@@ -4,9 +4,9 @@ from typing import Optional
 from pydantic import BaseModel
 import os
 from supabase import create_client, Client
-from dotenv import load_dotenv 
+# from dotenv import load_dotenv 
 
-load_dotenv() 
+# load_dotenv() 
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
