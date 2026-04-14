@@ -1,31 +1,56 @@
 import os
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from supabase import create_client
 from upstash_redis import Redis
 from dotenv import load_dotenv
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-env_path = os.path.join(current_dir, "..", ".env")
-load_dotenv(dotenv_path=env_path)
+load_dotenv()
+
+print("🔥 FEED ROUTER LOADING...")
 
 router = APIRouter(prefix="/v1")
 
 NUM_POSTS = 20
 POSTS_PER_ENGINE = 15
 
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
+# =========================
+# SAFE INITIALIZATION
+# =========================
+
+supabase = None
+try:
+    SUPABASE_URL = os.getenv("SUPABASE_URL")
+    SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise Exception("Missing Supabase env")
+
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    print("✅ Supabase connected (feed)")
+except Exception as e:
+    print("❌ Supabase init failed:", e)
 
 redis_client = None
 try:
     redis_client = Redis.from_env()
-    # Verify connection
     redis_client.ping()
+    print("✅ Redis connected")
 except Exception as e:
-    print(f"[WARN] Redis unavailable for feed (skipping exploit engine): {e}")
+    print(f"[WARN] Redis unavailable: {e}")
+
+print("🔥 FEED ROUTER READY")
+
+# =========================
+# ROUTE
+# =========================
 
 @router.get("/feed/{user_id}")
 def generate_blended_feed(user_id: str):
-    print(f"Generating Blended Feed for User: {user_id}")
+
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Supabase not initialized")
+
+    print(f"Generating Feed for {user_id}")
 
     exploit_posts = []
     if redis_client:
@@ -34,100 +59,57 @@ def generate_blended_feed(user_id: str):
             if not exploit_posts:
                 exploit_posts = redis_client.lrange("global_trending", 0, POSTS_PER_ENGINE - 1)
         except Exception as e:
-            print(f"[WARN] Failed to fetch from Redis: {e}")
+            print(f"[WARN] Redis error: {e}")
 
     explore_posts = []
-    user_data = supabase.table("profiles").select("explore_embedding").eq("id", user_id).execute()
+    try:
+        user_data = supabase.table("profiles").select("explore_embedding").eq("id", user_id).execute()
 
-    if user_data.data and user_data.data[0].get("explore_embedding"):
-        user_vector = user_data.data[0]["explore_embedding"]
-        matches = supabase.rpc("match_explore_posts", {
-            "query_embedding": user_vector,
-            "match_limit": POSTS_PER_ENGINE
-        }).execute()
-        explore_posts = [match["id"] for match in matches.data]
+        if user_data.data and user_data.data[0].get("explore_embedding"):
+            user_vector = user_data.data[0]["explore_embedding"]
 
+            matches = supabase.rpc("match_explore_posts", {
+                "query_embedding": user_vector,
+                "match_limit": POSTS_PER_ENGINE
+            }).execute()
+
+            explore_posts = [m["id"] for m in matches.data]
+    except Exception as e:
+        print("Explore error:", e)
+
+    # fallback
     if not exploit_posts and not explore_posts:
-        print(f"No Redis or explore data for {user_id}, using Supabase fallback")
         recent = supabase.table("posts").select("id").order("created_at", desc=True).limit(NUM_POSTS).execute()
         final_feed_meta = [{"post_id": r["id"], "source": "explore"} for r in recent.data]
     else:
         final_feed_meta = []
-        seen_posts = set()
-        max_len = max(len(exploit_posts), len(explore_posts))
+        seen = set()
 
-        for i in range(max_len):
+        for i in range(max(len(exploit_posts), len(explore_posts))):
             if i < len(exploit_posts):
-                post_id = exploit_posts[i]
-                if post_id not in seen_posts:
-                    final_feed_meta.append({"post_id": post_id, "source": "exploit"})
-                    seen_posts.add(post_id)
+                p = exploit_posts[i]
+                if p not in seen:
+                    final_feed_meta.append({"post_id": p, "source": "exploit"})
+                    seen.add(p)
 
             if i < len(explore_posts):
-                post_id = explore_posts[i]
-                if post_id not in seen_posts:
-                    final_feed_meta.append({"post_id": post_id, "source": "explore"})
-                    seen_posts.add(post_id)
+                p = explore_posts[i]
+                if p not in seen:
+                    final_feed_meta.append({"post_id": p, "source": "explore"})
+                    seen.add(p)
 
             if len(final_feed_meta) >= NUM_POSTS:
                 break
 
     if not final_feed_meta:
-        return {"user_id": user_id, "feed_length": 0, "feed": []}
+        return {"user_id": user_id, "feed": []}
 
-    post_ids = [item["post_id"] for item in final_feed_meta]
-    source_map = {item["post_id"]: item["source"] for item in final_feed_meta}
+    post_ids = [p["post_id"] for p in final_feed_meta]
 
-    rows = supabase.table("posts").select(
-        "id, title, content, image_url, like_count, dislike_count, comment_count, created_at, user_id, club_id"
-    ).in_("id", post_ids).execute()
-
-    if not rows.data:
-        return {"user_id": user_id, "feed_length": 0, "feed": []}
-
-    club_ids = list({row["club_id"] for row in rows.data if row.get("club_id")})
-    club_map = {}
-    if club_ids:
-        clubs = supabase.table("clubs").select("id, name, slug").in_("id", club_ids).execute()
-        club_map = {c["id"]: c for c in clubs.data}
-
-    user_ids = list({row["user_id"] for row in rows.data if row.get("user_id")})
-    username_map = {}
-    if user_ids:
-        profiles = supabase.table("profiles").select("id, username, avatar_url").in_("id", user_ids).execute()
-        username_map = {p["id"]: p for p in profiles.data}
-
-    post_map = {row["id"]: row for row in rows.data}
-
-    enriched_feed = []
-    for item in final_feed_meta:
-        post = post_map.get(item["post_id"])
-        if not post:
-            continue
-
-        club = club_map.get(post.get("club_id"), {})
-        profile = username_map.get(post.get("user_id"), {})
-
-        enriched_feed.append({
-            "id": post["id"],
-            "ai_source": source_map[post["id"]],
-            "title": post.get("title", ""),
-            "content": post.get("content", ""),
-            "image": post.get("image_url"),
-            "likes": post.get("like_count", 0),
-            "dislikes": post.get("dislike_count", 0),
-            "commentCount": post.get("comment_count", 0),
-            "created_at": post.get("created_at"),
-            "time": post.get("created_at", ""),
-            "clubName": club.get("name", "Unknown Club"),
-            "clubSlug": club.get("slug", ""),
-            "clubColor": "from-purple-600 to-indigo-700",
-            "username": profile.get("username", "user"),
-            "avatar_url": profile.get("avatar_url"),
-        })
+    rows = supabase.table("posts").select("*").in_("id", post_ids).execute()
 
     return {
         "user_id": user_id,
-        "feed_length": len(enriched_feed),
-        "feed": enriched_feed
+        "feed_length": len(rows.data),
+        "feed": rows.data
     }

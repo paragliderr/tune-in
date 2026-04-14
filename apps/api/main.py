@@ -1,5 +1,3 @@
-#EDITED THIS FILE
-
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,21 +8,16 @@ import httpx
 print("SUPABASE VERSION:", supabase.__version__)
 print("HTTPX VERSION:", httpx.__version__)
 
-# Routers
-from routers import igdb
-from app.routers import auth, users, posts
+# =========================
+# ROUTERS IMPORT (FIXED)
+# =========================
 
-feed_router = None
+from apps.api.routers import auth, users, posts, igdb, feed
+print("🔥 FEED ROUTER IMPORTED")
+
 update_exploit_data = None
 
-# Try loading optional feed router
-try:
-    from routers import feed
-    feed_router = feed.router
-except Exception as e:
-    print(f"[WARN] Feed router unavailable: {e}")
-
-# Try loading scheduler + exploit updater
+# Scheduler import
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
     from scripts.update_exploit import update_exploit_data as _update
@@ -32,7 +25,10 @@ try:
 except Exception as e:
     print(f"[WARN] Exploit scheduler unavailable: {e}")
 
-# Initialize scheduler (every 2 hours)
+# =========================
+# SCHEDULER SETUP
+# =========================
+
 scheduler = None
 if update_exploit_data:
     scheduler = BackgroundScheduler()
@@ -46,27 +42,31 @@ if update_exploit_data:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     if scheduler:
         scheduler.start()
-        print("[OK] Scheduler started — running every 2 hours.")
+        print("[OK] Scheduler started")
     else:
-        print("[OK] Running without scheduler (IGDB-only mode).")
+        print("[OK] Running without scheduler")
 
     yield
 
-    # Shutdown
     if scheduler:
         scheduler.shutdown()
-        print("[OK] Scheduler shut down.")
+        print("[OK] Scheduler stopped")
+
+# =========================
+# APP INIT
+# =========================
 
 app = FastAPI(
     title="Tune-In Unified Backend",
-    description="IGDB + Feed + Auth + Posts + Users",
     lifespan=lifespan,
 )
 
+# =========================
 # CORS
+# =========================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -80,10 +80,9 @@ app.add_middleware(
 )
 
 # =========================
-# ROUTERS (UNIFIED)
+# ROUTERS
 # =========================
 
-# Core app routes
 app.include_router(auth.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(posts.router, prefix="/api")
@@ -93,20 +92,18 @@ if feed_router:
     app.include_router(feed_router, prefix="/api")
 
 # IGDB
+app.include_router(feed.router, prefix="/api")
 app.include_router(igdb.router, prefix="/api")
 
 # =========================
 # HEALTH
 # =========================
 
-modules = ["IGDB", "Auth", "Users", "Posts"] + (["Feed"] if feed_router else [])
-
 @app.get("/")
 def health_check():
     return {
-        "status": "The Matrix is online.",
-        "modules": modules,
-        "scheduler": "enabled" if scheduler else "disabled",
+        "status": "online",
+        "modules": ["IGDB", "Auth", "Users", "Posts", "Feed"],
     }
 
 @app.get("/health")
