@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import auth, users, posts,feed
+app = FastAPI()
+from app.letterboxd import router as letterboxd_router
+app.include_router(letterboxd_router)
 
 from app.database import engine, Base
 from app.models.user import User
