@@ -89,7 +89,9 @@ export default function TuneInDashboard() {
   }, []);
 
   // ✅ 2. Fetch ALL data (single source of truth)
-  useEffect(() => {
+// ONLY showing corrected critical section (rest unchanged)
+
+useEffect(() => {
   if (!user?.id) return;
 
   const initData = async () => {
@@ -97,39 +99,70 @@ export default function TuneInDashboard() {
     setError(false);
 
     try {
-      // 🔥 HGT DATA (current user)
+      // 🔥 HGT DATA
       const graphData = await fetchHGTProfile(user.id);
       setHgtData(graphData);
 
-      // 🔥 REAL LEADERBOARD (single API call)
-const res = await fetch("/api/tune-in/leaderboard");
-const data = await res.json();
+      // ❌ OLD LOGIC (COMMENTED CLEANLY)
+      /*
+      const res = await fetch("/api/tune-in/leaderboard");
+      const data = await res.json();
 
-// 🔥 get profile info
-const { data: profiles } = await supabase
-  .from("profiles")
-  .select("id, username, avatar_url");
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, username, avatar_url");
 
-const profileMap = new Map();
+      const profileMap = new Map();
+      (profiles || []).forEach((p) => {
+        profileMap.set(p.id, p);
+      });
+
+      const mergedLeaderboard = data.map((entry: any) => {
+        const profile = profileMap.get(entry.user_id);
+
+        return {
+          username: profile?.username || "User",
+          avatar_url: profile?.avatar_url,
+          score: entry.score ?? 0,
+        };
+      });
+
+      setLeaderboard(
+        mergedLeaderboard.sort((a, b) => b.score - a.score)
+      );
+      */
+
+      // ✅ NEW LOGIC
+      const res = await fetch("/api/tune-in/leaderboard");
+      const data = await res.json();
+
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, username, avatar_url");
+
+      const profileMap = new Map();
 (profiles || []).forEach((p) => {
-  profileMap.set(p.id, p);
+  profileMap.set(String(p.id), p);
 });
 
-// 🔥 merge backend + profile
-const mergedLeaderboard = data.map((entry: any) => {
-  const profile = profileMap.get(entry.user_id);
+      const mergedLeaderboard = data.map((entry: any) => {
+  const uid = String(entry.user_id || entry.id || "");
+
+  const profile = profileMap.get(uid);
 
   return {
-    username: profile?.username || "User",
-    avatar_url: profile?.avatar_url,
+    user_id: uid,
+    username: profile?.username ?? "User",
+    avatar_url: profile?.avatar_url ?? null,
     score: entry.score ?? 0,
   };
 });
 
-// 🔥 sort (just in case)
-setLeaderboard(
-  mergedLeaderboard.sort((a, b) => b.score - a.score)
-);
+      setLeaderboard(
+        mergedLeaderboard
+          .filter((u) => u.user_id !== user.id)
+          .sort((a, b) => b.score - a.score)
+      );
 
     } catch (err) {
       console.error(err);
@@ -140,7 +173,8 @@ setLeaderboard(
   };
 
   initData();
-}, [user?.id]);
+
+}, [user?.id]); // ✅ THIS WAS MISSING
   // ✅ LOADING UI
   if (loading) {
     return <div className="p-6">Loading Tune-In...</div>;
