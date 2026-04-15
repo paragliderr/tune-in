@@ -35,39 +35,30 @@ type CategoryKey = typeof CATEGORIES[number]["key"];
 // ─── Score fetchers ────────────────────────────────────────────────────────
 
 async function fetchOverallLeaderboard(): Promise<LeaderboardEntry[]> {
-  const [{ data: profiles }, { data: movieCounts }, { data: gameCounts }, { data: postCounts }] =
-    await Promise.all([
-      supabase.from("profiles").select("id, username, avatar_url"),
-      supabase.from("movie_reviews").select("user_id"),
-      supabase.from("game_reviews").select("user_id"),
-      supabase.from("posts").select("user_id"),
-    ]);
-
-  const tally = (arr: { user_id?: string }[] | null) => {
-    const map: Record<string, number> = {};
-    arr?.forEach((r) => { const id = r.user_id; if (id) map[id] = (map[id] ?? 0) + 1; });
-    return map;
-  };
-
-  const movies   = tally(movieCounts);
-  const games    = tally(gameCounts);
-  const posts    = tally(postCounts);
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, username, avatar_url");
 
   return (profiles ?? [])
-    .map((p) => ({
-      user_id:    p.id,
-      username:   p.username || "User", // Safe fallback
-      avatar_url: p.avatar_url,
-      score:
-        (movies[p.id]  ?? 0) * 3 +
-        (games[p.id]   ?? 0) * 3 +
-        (posts[p.id]   ?? 0) * 1,
-      breakdown: {
-        movies:    movies[p.id]  ?? 0,
-        games:     games[p.id]   ?? 0,
-        posts:     posts[p.id]   ?? 0,
-      },
-    }))
+    .map((p, i) => {
+      // 🔥 placeholder for future HGT score
+      const hgtScore = null; // will come from API later
+
+      return {
+        user_id: p.id,
+        username: p.username || `User_${i}`,
+        avatar_url: p.avatar_url,
+
+        // ✅ DEFAULT 0, USE REAL IF AVAILABLE
+        score: hgtScore ?? 0,
+
+        breakdown: {
+          movies: 0,
+          games: 0,
+          posts: 0,
+        },
+      };
+    })
     .sort((a, b) => b.score - a.score)
     .slice(0, 50);
 }

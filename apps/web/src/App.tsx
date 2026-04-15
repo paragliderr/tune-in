@@ -13,6 +13,7 @@ import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import Profile from "./pages/Profile";
 import Leaderboard from "./pages/Leaderboard"; 
+import TuneInDashboard from "./pages/TuneInDashboard.tsx";
 
 const queryClient = new QueryClient();
 
@@ -44,7 +45,14 @@ const App = () => (
               </AuthGuard>
             }
           />
-
+          <Route
+              path="/tune-in"
+              element={
+                <AuthGuard>
+                  <TuneInDashboard />
+                </AuthGuard>
+              }
+            />
           <Route
             path="/user/:username"
             element={

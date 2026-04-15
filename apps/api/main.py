@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from routers import tunein
 import supabase
 import httpx
 
@@ -86,6 +86,12 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(posts.router, prefix="/api")
+app.include_router(tunein.router, prefix="/api")
+# Feed (optional)
+if feed_router:
+    app.include_router(feed_router, prefix="/api")
+
+# IGDB
 app.include_router(feed.router, prefix="/api")
 app.include_router(igdb.router, prefix="/api")
 
