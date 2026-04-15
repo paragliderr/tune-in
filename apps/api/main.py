@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import tunein
 import supabase
 import httpx
 
@@ -9,15 +8,18 @@ print("SUPABASE VERSION:", supabase.__version__)
 print("HTTPX VERSION:", httpx.__version__)
 
 # =========================
-# ROUTERS IMPORT (FIXED)
+# ROUTERS IMPORT
 # =========================
+# FIX 1: Use "from routers import ..." NOT "from apps.api.routers import ..."
+#         because this file lives at apps/api/main.py — Python resolves
+#         "routers" relative to that directory already.
 
-from apps.api.routers import auth, users, posts, igdb, feed
-print("🔥 FEED ROUTER IMPORTED")
+from routers import auth, users, posts, igdb, feed, tunein
+print("🔥 ALL ROUTERS IMPORTED")
 
 update_exploit_data = None
 
-# Scheduler import
+# Scheduler import (graceful fallback)
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
     from scripts.update_exploit import update_exploit_data as _update
@@ -44,7 +46,7 @@ if update_exploit_data:
 async def lifespan(app: FastAPI):
     if scheduler:
         scheduler.start()
-        print("[OK] Scheduler started")
+        print("[OK] Scheduler started — running every 2 hours.")
     else:
         print("[OK] Running without scheduler")
 
@@ -81,19 +83,16 @@ app.add_middleware(
 
 # =========================
 # ROUTERS
+# FIX 2: Removed duplicate feed.router registration.
+# FIX 3: Removed the undefined `feed_router` variable — was never set.
 # =========================
 
-app.include_router(auth.router, prefix="/api")
-app.include_router(users.router, prefix="/api")
-app.include_router(posts.router, prefix="/api")
+app.include_router(auth.router,   prefix="/api")
+app.include_router(users.router,  prefix="/api")
+app.include_router(posts.router,  prefix="/api")
 app.include_router(tunein.router, prefix="/api")
-# Feed (optional)
-if feed_router:
-    app.include_router(feed_router, prefix="/api")
-
-# IGDB
-app.include_router(feed.router, prefix="/api")
-app.include_router(igdb.router, prefix="/api")
+app.include_router(feed.router,   prefix="/api")
+app.include_router(igdb.router,   prefix="/api")
 
 # =========================
 # HEALTH
@@ -103,7 +102,7 @@ app.include_router(igdb.router, prefix="/api")
 def health_check():
     return {
         "status": "online",
-        "modules": ["IGDB", "Auth", "Users", "Posts", "Feed"],
+        "modules": ["IGDB", "Auth", "Users", "Posts", "Feed", "TuneIn"],
     }
 
 @app.get("/health")
