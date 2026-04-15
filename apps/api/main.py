@@ -1,3 +1,5 @@
+# main.py
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,11 +16,14 @@ print("HTTPX VERSION:", httpx.__version__)
 # ROUTERS IMPORT
 # =========================
 from routers import auth, users, posts, igdb, feed, tunein, connect
+
 print("🔥 ALL ROUTERS IMPORTED")
 
 update_exploit_data = None
 
-# Scheduler import
+# =========================
+# SCHEDULER IMPORT
+# =========================
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
     from scripts.update_exploit import update_exploit_data as _update
@@ -29,7 +34,6 @@ except Exception as e:
 # =========================
 # SCHEDULER SETUP
 # =========================
-
 scheduler = None
 if update_exploit_data:
     scheduler = BackgroundScheduler()
@@ -58,7 +62,6 @@ async def lifespan(app: FastAPI):
 # =========================
 # APP INIT
 # =========================
-
 app = FastAPI(
     title="Tune-In Unified Backend",
     lifespan=lifespan,
@@ -67,7 +70,6 @@ app = FastAPI(
 # =========================
 # CORS
 # =========================
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -88,14 +90,17 @@ app.add_middleware(
 # ROUTERS
 # =========================
 
+# Core APIs
 app.include_router(auth.router,   prefix="/api")
 app.include_router(users.router,  prefix="/api")
 app.include_router(posts.router,  prefix="/api")
 app.include_router(tunein.router, prefix="/api")
 
-# ✅ CRITICAL FIX (DO NOT CHANGE)
-app.include_router(feed.router, prefix="/api")
+# ✅ Preserve BOTH old and new feed routes
+app.include_router(feed.router, prefix="/api")  # new
+app.include_router(feed.router, prefix="/v1")   # old (safe backward compatibility)
 
+# Other routers
 app.include_router(igdb.router,   prefix="/api")
 app.include_router(connect.router, prefix="/api")
 

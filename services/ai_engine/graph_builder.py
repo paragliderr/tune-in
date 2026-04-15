@@ -118,20 +118,31 @@ class Neo4jGraphBuilder:
         # service can look up any user by their Supabase auth UUID.
         self.user_id_map       = {}
         self.user_supabase_map = {}
+        
+        # 🔥 CRITICAL MAP 1: API Input (Supabase UUID -> PyG Integer)
         self.supabase_to_idx   = {}
 
         for i, r in enumerate(users):
             neo4j_id    = r["id"]
             # If supabase_id was stored on the node use it; otherwise fall back
-            # to treating neo4j_id == supabase_id (works after the one-time
-            # `SET u.supabase_id = u.id` migration).
             supabase_id = r.get("supabase_id") or neo4j_id
 
             self.user_id_map[neo4j_id]            = i
-            self.user_supabase_map[neo4j_id]       = supabase_id
-            self.supabase_to_idx[supabase_id]      = i
+            self.user_supabase_map[neo4j_id]      = supabase_id
+            self.supabase_to_idx[supabase_id]     = i
 
-        post_map = {r["id"]: i for i, r in enumerate(posts)}
+        # 🔥 CRITICAL MAP 2: API Output (PyG Integer -> Post Supabase UUID)
+        post_map = {}
+        self.idx_to_post = {}
+        
+        for i, r in enumerate(posts):
+            neo4j_id = r["id"]
+            # Fallback for posts too, ensuring frontend gets exact Supabase UUIDs
+            frontend_post_id = r.get("supabase_id") or neo4j_id
+            
+            post_map[neo4j_id] = i
+            self.idx_to_post[i] = frontend_post_id
+
         club_map = {r["id"]: i for i, r in enumerate(clubs)}
 
         id_maps = {

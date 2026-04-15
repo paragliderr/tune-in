@@ -8,7 +8,7 @@ load_dotenv()
 
 print("🔥 FEED ROUTER LOADING...")
 
-router = APIRouter(prefix="/v1")
+router = APIRouter()
 
 NUM_POSTS = 20
 POSTS_PER_ENGINE = 15
