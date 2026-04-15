@@ -65,7 +65,7 @@ app = FastAPI(
 )
 
 # =========================
-# CORS (MERGED)
+# CORS
 # =========================
 
 app.add_middleware(
@@ -91,10 +91,13 @@ app.add_middleware(
 app.include_router(auth.router,   prefix="/api")
 app.include_router(users.router,  prefix="/api")
 app.include_router(posts.router,  prefix="/api")
-app.include_router(tunein.router, prefix="/api")   # YOUR IMPORTANT ROUTER
-app.include_router(feed.router,   prefix="/api")   # YOUR WORKING FEED
+app.include_router(tunein.router, prefix="/api")
+
+# ✅ CRITICAL FIX (DO NOT CHANGE)
+app.include_router(feed.router, prefix="/api")
+
 app.include_router(igdb.router,   prefix="/api")
-app.include_router(connect.router, prefix="/api")  # HIS FEATURE
+app.include_router(connect.router, prefix="/api")
 
 # =========================
 # HEALTH
