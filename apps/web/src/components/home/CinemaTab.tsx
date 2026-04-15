@@ -226,6 +226,21 @@ const CinemaTab = () => {
   const [rawSearchResults, setRawSearchResults] = useState<TMDBMovie[]>([]);
   const [isInitialLoading, setInitialLoading] = useState(false);
   const [genres, setGenres] = useState<TMDBGenre[]>([]);
+  const [letterboxdUsername, setLetterboxdUsername] = useState<string | undefined>();
+
+  // Fetch logged in user's letterboxd connection to show in the global movie detail dialog
+  useEffect(() => {
+    const fetchConnections = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const { data } = await supabase.from("profiles").select("connections").eq("id", session.user.id).single();
+        if (data?.connections?.letterboxd) {
+          setLetterboxdUsername(data.connections.letterboxd);
+        }
+      }
+    };
+    fetchConnections();
+  }, []);
 
   // Listen for movie open events from PersonView
   useEffect(() => {
@@ -608,6 +623,7 @@ const CinemaTab = () => {
         open={!!selectedMovie}
         onOpenChange={(o) => !o && setSelectedMovie(null)}
         movie={selectedMovie}
+        letterboxdUsername={letterboxdUsername}
       />
     </div>
   );

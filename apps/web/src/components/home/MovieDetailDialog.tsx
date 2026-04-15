@@ -43,6 +43,7 @@ interface Props {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   movie: TMDBMovie | null;
+  letterboxdUsername?: string; // optional: profile owner's Letterboxd handle
 }
 
 interface CustomReview {
@@ -58,6 +59,16 @@ interface CustomReview {
     username: string;
     avatar_url: string | null;
   };
+}
+
+interface LetterboxdReview {
+  title: string;
+  year: string | null;
+  tmdb_id: number | null;
+  rating: number | null;  // 0.5–5.0
+  review: string;
+  date: string;
+  letterboxd_url: string;
 }
 
 /* ── Star rating input ── */
@@ -404,12 +415,13 @@ type DialogView =
   | { type: "seasonDetail"; seasonNumber: number }
   | { type: "person"; personId: number; personName: string };
 
-const MovieDetailDialog = ({ open, onOpenChange, movie }: Props) => {
+const MovieDetailDialog = ({ open, onOpenChange, movie, letterboxdUsername }: Props) => {
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [detail, setDetail] = useState<TMDBDetail | null>(null);
   const [reviews, setReviews] = useState<TMDBReview[]>([]);
   const [customReviews, setCustomReviews] = useState<CustomReview[]>([]);
+  const [letterboxdReviews, setLetterboxdReviews] = useState<LetterboxdReview[]>([]);
   const [cast, setCast] = useState<TMDBCast[]>([]);
   const [watchProviders, setWatchProviders] =
     useState<TMDBWatchProviders | null>(null);
@@ -448,6 +460,7 @@ const MovieDetailDialog = ({ open, onOpenChange, movie }: Props) => {
     setDetail(null);
     setReviews([]);
     setCustomReviews([]);
+    setLetterboxdReviews([]);
     setCast([]);
     setWatchProviders(null);
     setView({ type: "main" });
@@ -479,6 +492,31 @@ const MovieDetailDialog = ({ open, onOpenChange, movie }: Props) => {
         if (crRes.data) {
           setCustomReviews(crRes.data as any);
         }
+
+        // Fetch Letterboxd reviews if profile owner is connected
+        if (letterboxdUsername) {
+          try {
+            const lbRes = await fetch(
+              `${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/api/connect/letterboxd/feed?username=${encodeURIComponent(letterboxdUsername)}`
+            );
+            if (lbRes.ok) {
+              const lbData = await lbRes.json();
+              console.log("[Letterboxd DEBUG] User:", letterboxdUsername);
+              console.log("[Letterboxd DEBUG] Fetched feed:", lbData.reviews.length, "entries");
+              // Filter to only reviews matching this movie's TMDB ID
+              const matched = (lbData.reviews as LetterboxdReview[]).filter((rev) => {
+                const isMatch = rev.tmdb_id != null && Number(rev.tmdb_id) === Number(movie.id);
+                if (isMatch) {
+                  console.log("[Letterboxd DEBUG] MATCH FOUND:", rev);
+                }
+                return isMatch;
+              });
+              setLetterboxdReviews(matched);
+            }
+          } catch {
+            // Letterboxd fetch is non-critical, fail silently
+          }
+        }
       } catch {
         // fail silently
       } finally {
@@ -486,7 +524,7 @@ const MovieDetailDialog = ({ open, onOpenChange, movie }: Props) => {
       }
     };
     fetchData();
-  }, [movie, open, isTV]);
+  }, [movie, open, isTV, letterboxdUsername]);
 
   /* Load season detail */
   const loadSeason = async (seasonNumber: number) => {
@@ -1013,7 +1051,7 @@ const MovieDetailDialog = ({ open, onOpenChange, movie }: Props) => {
                 <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
                   Reviews{" "}
                   <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                    {customReviews.length + reviews.length}
+                    {customReviews.length + letterboxdReviews.length + reviews.length}
                   </span>
                 </h3>
 
@@ -1029,6 +1067,56 @@ const MovieDetailDialog = ({ open, onOpenChange, movie }: Props) => {
                 )}
 
                 <AnimatePresence>
+                  {/* LETTERBOXD REVIEWS */}
+                  {letterboxdReviews.map((r, i) => (
+                    <motion.div
+                      key={`lb-${i}`}
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: (customReviews.length + i) * 0.05 }}
+                      className="bg-[#00e054]/5 border border-[#00e054]/20 rounded-xl p-5 space-y-3 relative overflow-hidden"
+                    >
+                      {/* Letterboxd badge */}
+                      <div className="absolute top-0 right-0 px-3 py-1 bg-[#00e054]/15 text-[#00e054] text-[10px] font-bold uppercase rounded-bl-lg tracking-wider">
+                        Letterboxd
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {/* Avatar: first letter of username */}
+                        <a
+                          href={r.letterboxd_url || `https://letterboxd.com/${letterboxdUsername}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-3 flex-1 min-w-0 group/lb"
+                        >
+                          <div className="w-10 h-10 rounded-full bg-[#00e054]/20 border border-[#00e054]/30 flex items-center justify-center text-sm font-bold text-[#00e054]">
+                            {letterboxdUsername?.charAt(0).toUpperCase() || "L"}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-foreground truncate group-hover/lb:text-[#00e054] transition-colors">
+                              @{letterboxdUsername}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground">
+                              {r.date ? new Date(r.date).toLocaleDateString() : ""}
+                            </p>
+                          </div>
+                        </a>
+                        {/* Half-star rating */}
+                        {r.rating != null && (
+                          <div className="flex items-center gap-0.5 text-xs bg-background/50 px-2 py-1 rounded-md shadow-sm border border-border/30 shrink-0">
+                            <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500 drop-shadow-sm" />
+                            <span className="text-foreground font-bold">{r.rating}</span>
+                            <span className="text-muted-foreground">/5</span>
+                          </div>
+                        )}
+                      </div>
+                      {r.review && (
+                        <p className="text-sm text-foreground/80 leading-relaxed">
+                          {r.review.length > 600 ? r.review.slice(0, 600) + "..." : r.review}
+                        </p>
+                      )}
+                    </motion.div>
+                  ))}
+
                   {/* TUNE-IN APP REVIEWS (First) */}
                   {customReviews.map((r, i) => (
                     <motion.div
