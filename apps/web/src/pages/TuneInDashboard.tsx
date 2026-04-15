@@ -68,6 +68,16 @@ const Avatar = ({ url, title, size = 36 }: { url: string | null; title: string; 
   );
 };
 
+// ─── Hardcoded Data ────────────────────────────────────────────────────────
+// Added for users who have attached external connections
+const hardcodedConnectedUsers = [
+  { username: "samanyu", avatar_url: null, connection: "Letterboxd", icon: <Film size={14} className="text-orange-500" /> }, // Changed from cinephile99 to samanyu
+  { username: "coder_chick", avatar_url: null, connection: "GitHub", icon: <Github size={14} className="text-foreground" /> },
+  { username: "music_lover", avatar_url: null, connection: "Spotify", icon: <Music size={14} className="text-green-500" /> },
+  { username: "iron_lifter", avatar_url: null, connection: "Strava", icon: <Dumbbell size={14} className="text-orange-600" /> },
+  { username: "pro_gamer", avatar_url: null, connection: "Steam", icon: <Gamepad2 size={14} className="text-blue-500" /> },
+];
+
 // ─── Main Component ────────────────────────────────────────────────────────
 
 export default function TuneInDashboard() {
@@ -89,92 +99,62 @@ export default function TuneInDashboard() {
   }, []);
 
   // ✅ 2. Fetch ALL data (single source of truth)
-// ONLY showing corrected critical section (rest unchanged)
+  useEffect(() => {
+    if (!user?.id) return;
 
-useEffect(() => {
-  if (!user?.id) return;
+    const initData = async () => {
+      setLoading(true);
+      setError(false);
 
-  const initData = async () => {
-    setLoading(true);
-    setError(false);
+      try {
+        // 🔥 HGT DATA
+        const graphData = await fetchHGTProfile(user.id);
+        setHgtData(graphData);
 
-    try {
-      // 🔥 HGT DATA
-      const graphData = await fetchHGTProfile(user.id);
-      setHgtData(graphData);
+        // ✅ NEW LOGIC
+        const res = await fetch("/api/tune-in/leaderboard");
+        const data = await res.json();
 
-      // ❌ OLD LOGIC (COMMENTED CLEANLY)
-      /*
-      const res = await fetch("/api/tune-in/leaderboard");
-      const data = await res.json();
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("id, username, avatar_url");
 
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("id, username, avatar_url");
+        const profileMap = new Map();
+        (profiles || []).forEach((p) => {
+          profileMap.set(String(p.id), p);
+        });
 
-      const profileMap = new Map();
-      (profiles || []).forEach((p) => {
-        profileMap.set(p.id, p);
-      });
+        const mergedLeaderboard = data.map((entry: any) => {
+          const uid = String(entry.user_id || entry.id || "");
 
-      const mergedLeaderboard = data.map((entry: any) => {
-        const profile = profileMap.get(entry.user_id);
+          const profile = profileMap.get(uid);
 
-        return {
-          username: profile?.username || "User",
-          avatar_url: profile?.avatar_url,
-          score: entry.score ?? 0,
-        };
-      });
+          return {
+            user_id: uid,
+            username: profile?.username ?? "User",
+            avatar_url: profile?.avatar_url ?? null,
+            score: entry.score ?? 0,
+          };
+        });
 
-      setLeaderboard(
-        mergedLeaderboard.sort((a, b) => b.score - a.score)
-      );
-      */
+        setLeaderboard(
+          mergedLeaderboard
+            .filter((u) => u.user_id !== user.id)
+            .sort((a, b) => b.score - a.score)
+        );
 
-      // ✅ NEW LOGIC
-      const res = await fetch("/api/tune-in/leaderboard");
-      const data = await res.json();
+      } catch (err) {
+        console.error(err);
+        setError(true);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("id, username, avatar_url");
+    initData();
 
-      const profileMap = new Map();
-(profiles || []).forEach((p) => {
-  profileMap.set(String(p.id), p);
-});
-
-      const mergedLeaderboard = data.map((entry: any) => {
-  const uid = String(entry.user_id || entry.id || "");
-
-  const profile = profileMap.get(uid);
-
-  return {
-    user_id: uid,
-    username: profile?.username ?? "User",
-    avatar_url: profile?.avatar_url ?? null,
-    score: entry.score ?? 0,
-  };
-});
-
-      setLeaderboard(
-        mergedLeaderboard
-          .filter((u) => u.user_id !== user.id)
-          .sort((a, b) => b.score - a.score)
-      );
-
-    } catch (err) {
-      console.error(err);
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  initData();
-
-}, [user?.id]); // ✅ THIS WAS MISSING
+  }, [user?.id]); // ✅ THIS WAS MISSING
+  
   // ✅ LOADING UI
   if (loading) {
     return <div className="p-6">Loading Tune-In...</div>;
@@ -184,6 +164,7 @@ useEffect(() => {
   if (error) {
     return <div className="p-6 text-red-500">Failed to load Tune-In</div>;
   }
+
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
       <header className="h-14 border-b border-border flex items-center px-5 gap-4 flex-shrink-0 bg-background/80 backdrop-blur-xl z-20">
@@ -205,82 +186,82 @@ useEffect(() => {
             <div className="lg:col-span-2 space-y-6">
               
               {/* Score Breakdown Panel */}
-<div className="rounded-2xl border border-border bg-card/60 backdrop-blur-sm p-6 shadow-sm">
-  <div className="flex items-center justify-between mb-6">
-    <div>
-      <h2 className="text-xl font-bold">Your Multi-Domain Graph</h2>
-      <p className="text-xs text-muted-foreground mt-1">
-        API Connections & Point Generators
-      </p>
-    </div>
+              <div className="rounded-2xl border border-border bg-card/60 backdrop-blur-sm p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="text-xl font-bold">Your Multi-Domain Graph</h2>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      API Connections & Point Generators
+                    </p>
+                  </div>
 
-    {/* ✅ SAFE TOTAL SCORE */}
-    <div className="text-right">
-      <div className="text-2xl font-black text-primary">
-        {hgtData?.total_score ?? 0}
-      </div>
-      <div className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">
-        Total Points
-      </div>
-    </div>
-  </div>
+                  {/* ✅ SAFE TOTAL SCORE */}
+                  <div className="text-right">
+                    <div className="text-2xl font-black text-primary">
+                      {hgtData?.total_score ?? 0}
+                    </div>
+                    <div className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">
+                      Total Points
+                    </div>
+                  </div>
+                </div>
 
-  {/* ✅ LOADING STATE */}
-  {loading ? (
-    <div className="animate-pulse space-y-3">
-      <div className="h-10 bg-muted/40 rounded-xl" />
-      <div className="h-10 bg-muted/40 rounded-xl" />
-    </div>
-  ) : (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* ✅ LOADING STATE */}
+                {loading ? (
+                  <div className="animate-pulse space-y-3">
+                    <div className="h-10 bg-muted/40 rounded-xl" />
+                    <div className="h-10 bg-muted/40 rounded-xl" />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 
-      {/* ✅ SAFE MAP (IMPORTANT FIX) */}
-      {(hgtData?.api_connections ?? []).map((api: any) => (
-        <div
-          key={api.id}
-          className={`flex items-center justify-between p-3 rounded-xl border ${
-            api.connected
-              ? "bg-background/50 border-border/50"
-              : "bg-red-500/5 border-red-500/20"
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <span className={api.color}>{api.icon}</span>
-            <span className="text-sm font-bold">{api.name}</span>
-          </div>
+                    {/* ✅ SAFE MAP (IMPORTANT FIX) */}
+                    {(hgtData?.api_connections ?? []).map((api: any) => (
+                      <div
+                        key={api.id}
+                        className={`flex items-center justify-between p-3 rounded-xl border ${
+                          api.connected
+                            ? "bg-background/50 border-border/50"
+                            : "bg-red-500/5 border-red-500/20"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className={api.color}>{api.icon}</span>
+                          <span className="text-sm font-bold">{api.name}</span>
+                        </div>
 
-          <div className="text-right">
-            {/* ✅ SAFE POINTS */}
-            <span
-              className={`text-sm font-black ${
-                api.connected ? "text-foreground" : "text-red-400"
-              }`}
-            >
-              {api.points ?? 0}
-            </span>
+                        <div className="text-right">
+                          {/* ✅ SAFE POINTS */}
+                          <span
+                            className={`text-sm font-black ${
+                              api.connected ? "text-foreground" : "text-red-400"
+                            }`}
+                          >
+                            {api.points ?? 0}
+                          </span>
 
-            {api.connected ? (
-              <div className="text-[9px] text-emerald-500 font-bold uppercase tracking-wide">
-                Connected
+                          {api.connected ? (
+                            <div className="text-[9px] text-emerald-500 font-bold uppercase tracking-wide">
+                              Connected
+                            </div>
+                          ) : (
+                            <div className="text-[9px] text-red-400 font-bold uppercase tracking-wide flex items-center gap-1">
+                              <AlertCircle size={10} /> Disconnected
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* ✅ FALLBACK IF EMPTY */}
+                    {(hgtData?.api_connections ?? []).length === 0 && (
+                      <div className="text-sm text-muted-foreground col-span-full text-center py-4">
+                        No connections yet — connect your accounts to start earning points 🚀
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="text-[9px] text-red-400 font-bold uppercase tracking-wide flex items-center gap-1">
-                <AlertCircle size={10} /> Disconnected
-              </div>
-            )}
-          </div>
-        </div>
-      ))}
-
-      {/* ✅ FALLBACK IF EMPTY */}
-      {(hgtData?.api_connections ?? []).length === 0 && (
-        <div className="text-sm text-muted-foreground col-span-full text-center py-4">
-          No connections yet — connect your accounts to start earning points 🚀
-        </div>
-      )}
-    </div>
-  )}
-</div>
 
               {/* Actionable Recommendations */}
               <div className="rounded-2xl border border-border bg-card/60 backdrop-blur-sm p-6 shadow-sm">
@@ -319,8 +300,10 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* ── RIGHT COL: Global Leaderboard ── */}
-            <div className="lg:col-span-1">
+            {/* ── RIGHT COL: Global Leaderboard & Recent Connections ── */}
+            <div className="lg:col-span-1 space-y-6">
+              
+              {/* Leaderboard Card */}
               <div className="rounded-2xl border border-border bg-card/60 backdrop-blur-xl overflow-hidden shadow-sm">
                 <div className="px-5 py-4 border-b border-border bg-gradient-to-br from-primary/10 to-transparent">
                   <div className="flex items-center gap-2 font-bold">
@@ -340,12 +323,37 @@ useEffect(() => {
                         <div className="text-sm font-bold truncate">@{user.username}</div>
                       </div>
                       <div className="text-sm font-black text-primary">
-  {user.score ?? 0}
-</div>
+                        {user.score ?? 0}
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
+
+              {/* Hardcoded Connections Card */}
+              <div className="rounded-2xl border border-border bg-card/60 backdrop-blur-xl overflow-hidden shadow-sm">
+                <div className="px-5 py-4 border-b border-border bg-gradient-to-br from-secondary/10 to-transparent">
+                  <div className="flex items-center gap-2 font-bold">
+                    <Link2 size={16} className="text-blue-500" />
+                    <span>Recently Connected Users</span>
+                  </div>
+                </div>
+
+                <div className="divide-y divide-border/50">
+                  {hardcodedConnectedUsers.map((u, idx) => (
+                    <div key={idx} onClick={() => navigate(`/user/${u.username}`)} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/40 cursor-pointer transition-colors">
+                      <Avatar url={u.avatar_url} title={u.username} size={32} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-bold truncate">@{u.username}</div>
+                        <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                          {u.icon} Linked {u.connection}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
             </div>
 
           </div>
