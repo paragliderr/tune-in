@@ -12,8 +12,8 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.9
 
-SQLAlchemy==2.0.29
-psycopg2-binary==2.9.9
+# SQLAlchemy==2.0.29
+# psycopg2-binary==2.9.9
 
 httpx==0.24.1
 websockets==12.0
