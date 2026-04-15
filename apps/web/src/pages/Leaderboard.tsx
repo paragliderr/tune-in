@@ -35,23 +35,22 @@ type CategoryKey = typeof CATEGORIES[number]["key"];
 // ─── Score fetchers ────────────────────────────────────────────────────────
 
 async function fetchOverallLeaderboard(): Promise<LeaderboardEntry[]> {
+
+  // ❌ OLD LOGIC (COMMENTED OUT — DO NOT DELETE)
+  /*
   const { data: profiles } = await supabase
     .from("profiles")
     .select("id, username, avatar_url");
 
   return (profiles ?? [])
     .map((p, i) => {
-      // 🔥 placeholder for future HGT score
-      const hgtScore = null; // will come from API later
+      const hgtScore = null;
 
       return {
         user_id: p.id,
         username: p.username || `User_${i}`,
         avatar_url: p.avatar_url,
-
-        // ✅ DEFAULT 0, USE REAL IF AVAILABLE
         score: hgtScore ?? 0,
-
         breakdown: {
           movies: 0,
           games: 0,
@@ -61,6 +60,60 @@ async function fetchOverallLeaderboard(): Promise<LeaderboardEntry[]> {
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, 50);
+  */
+
+  // ✅ NEW LOGIC (YOUR SCORING SYSTEM)
+
+  const [{ data: profiles }, { data: posts }, { data: movieReviews }, { data: gameReviews }] = await Promise.all([
+    supabase.from("profiles").select("id, username, avatar_url"),
+    supabase.from("posts").select("user_id"),
+    supabase.from("movie_reviews").select("user_id"),
+    supabase.from("game_reviews").select("user_id"),
+  ]);
+
+  const postCount: Record<string, number> = {};
+  const movieCount: Record<string, number> = {};
+  const gameCount: Record<string, number> = {};
+
+  posts?.forEach((p) => {
+    postCount[p.user_id] = (postCount[p.user_id] ?? 0) + 1;
+  });
+
+  movieReviews?.forEach((m) => {
+    movieCount[m.user_id] = (movieCount[m.user_id] ?? 0) + 1;
+  });
+
+  gameReviews?.forEach((g) => {
+    gameCount[g.user_id] = (gameCount[g.user_id] ?? 0) + 1;
+  });
+
+  return (profiles ?? [])
+    .map((p) => {
+      const postsScore = postCount[p.id] ?? 0;
+      const moviesScore = movieCount[p.id] ?? 0;
+      const gamesScore = gameCount[p.id] ?? 0;
+
+      const totalScore =
+        postsScore * 1 +
+        moviesScore * 3 +
+        gamesScore * 3;
+
+      return {
+        user_id: p.id,
+        username: p.username || "User",
+        avatar_url: p.avatar_url,
+        score: totalScore,
+        breakdown: {
+          posts: postsScore,
+          movies: moviesScore,
+          games: gamesScore,
+        },
+      };
+    })
+    .filter((e) => e.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 50);
+
 }
 
 async function fetchCinemaLeaderboard(): Promise<LeaderboardEntry[]> {
