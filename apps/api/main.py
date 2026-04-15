@@ -3,6 +3,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import supabase
 import httpx
+from dotenv import load_dotenv
+
+load_dotenv()
 
 print("SUPABASE VERSION:", supabase.__version__)
 print("HTTPX VERSION:", httpx.__version__)
@@ -10,16 +13,12 @@ print("HTTPX VERSION:", httpx.__version__)
 # =========================
 # ROUTERS IMPORT
 # =========================
-# FIX 1: Use "from routers import ..." NOT "from apps.api.routers import ..."
-#         because this file lives at apps/api/main.py — Python resolves
-#         "routers" relative to that directory already.
-
-from routers import auth, users, posts, igdb, feed, tunein
+from routers import auth, users, posts, igdb, feed, tunein, connect
 print("🔥 ALL ROUTERS IMPORTED")
 
 update_exploit_data = None
 
-# Scheduler import (graceful fallback)
+# Scheduler import
 try:
     from apscheduler.schedulers.background import BackgroundScheduler
     from scripts.update_exploit import update_exploit_data as _update
@@ -66,7 +65,7 @@ app = FastAPI(
 )
 
 # =========================
-# CORS
+# CORS (MERGED)
 # =========================
 
 app.add_middleware(
@@ -74,6 +73,10 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:8080",
         "http://127.0.0.1:8080",
+        "http://localhost:8081",
+        "http://127.0.0.1:8081",
+        "http://localhost:5173",
+        "http://localhost:3000",
         "https://tune-in-three.vercel.app",
     ],
     allow_credentials=True,
@@ -83,16 +86,15 @@ app.add_middleware(
 
 # =========================
 # ROUTERS
-# FIX 2: Removed duplicate feed.router registration.
-# FIX 3: Removed the undefined `feed_router` variable — was never set.
 # =========================
 
 app.include_router(auth.router,   prefix="/api")
 app.include_router(users.router,  prefix="/api")
 app.include_router(posts.router,  prefix="/api")
-app.include_router(tunein.router, prefix="/api")
-app.include_router(feed.router,   prefix="/api")
+app.include_router(tunein.router, prefix="/api")   # YOUR IMPORTANT ROUTER
+app.include_router(feed.router,   prefix="/api")   # YOUR WORKING FEED
 app.include_router(igdb.router,   prefix="/api")
+app.include_router(connect.router, prefix="/api")  # HIS FEATURE
 
 # =========================
 # HEALTH
@@ -102,7 +104,7 @@ app.include_router(igdb.router,   prefix="/api")
 def health_check():
     return {
         "status": "online",
-        "modules": ["IGDB", "Auth", "Users", "Posts", "Feed", "TuneIn"],
+        "modules": ["IGDB", "Auth", "Users", "Posts", "Feed", "TuneIn", "Connect"],
     }
 
 @app.get("/health")
