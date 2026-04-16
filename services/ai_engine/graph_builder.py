@@ -11,17 +11,27 @@ and every relationship becomes an edge_index tensor.
 
 import logging
 from typing import Optional
-
+from supabase import create_client, Client as SupabaseClient
+import os
 import torch
 import numpy as np
 from torch_geometric.data import HeteroData
 from neo4j import AsyncGraphDatabase, AsyncDriver
 
 logger = logging.getLogger(__name__)
-
+_supabase_client: SupabaseClient = None
 
 # ── Lazy E5 loader (avoids import crash if sentence-transformers not installed) ──
 _E5_MODEL = None
+
+def _get_supabase() -> SupabaseClient:
+    global _supabase_client
+    if _supabase_client is None:
+        _supabase_client = create_client(
+            os.environ["SUPABASE_URL"],
+            os.environ["SUPABASE_SERVICE_KEY"],  # use service key, not anon
+        )
+    return _supabase_client
 
 def _get_e5_model():
     global _E5_MODEL
@@ -196,35 +206,102 @@ class Neo4jGraphBuilder:
     # ── Cypher helpers ───────────────────────────────────────────────────────
 
     async def _fetch_users(self, session) -> list[dict]:
-        """
-        Fetch users including supabase_id.
-        After running the one-time migration:
-            MATCH (u:User) SET u.supabase_id = u.id
-        supabase_id will equal the Supabase auth UUID on every node.
-        """
+        # Neo4j has: id, supabase_id
+        # Supabase profiles has: id, username, bio
         result = await session.run(
-            """
-            MATCH (u:User)
-            RETURN
-                u.id          AS id,
-                u.supabase_id AS supabase_id,
-                u.username    AS username,
-                u.bio         AS bio
-            """
+            "MATCH (u:User) RETURN u.id AS id, u.supabase_id AS supabase_id"
         )
-        return [dict(r) async for r in result]
+        neo4j_rows = [dict(r) async for r in result]
+        if not neo4j_rows:
+            return []
+
+        # supabase_id == Supabase auth UUID (same value as id on your nodes)
+        ids = [r["supabase_id"] or r["id"] for r in neo4j_rows]
+
+        sb = _get_supabase()
+        profiles = (
+            sb.table("profiles")
+            .select("id, username, bio")
+            .in_("id", ids)
+            .execute()
+        )
+        profile_map = {p["id"]: p for p in (profiles.data or [])}
+
+        enriched = []
+        for r in neo4j_rows:
+            sid = r["supabase_id"] or r["id"]
+            p   = profile_map.get(sid, {})
+            enriched.append({
+                "id":          r["id"],
+                "supabase_id": sid,
+                "username":    p.get("username") or "",
+                "bio":         p.get("bio") or "",
+            })
+        return enriched
 
     async def _fetch_posts(self, session) -> list[dict]:
+        # Neo4j Post has: id, club_id
+        # Supabase posts has: id, title, content
         result = await session.run(
-            "MATCH (p:Post) RETURN p.id AS id, p.content AS content, p.caption AS caption"
+            "MATCH (p:Post) RETURN p.id AS id"
         )
-        return [dict(r) async for r in result]
+        neo4j_rows = [dict(r) async for r in result]
+        if not neo4j_rows:
+            return []
+
+        ids = [r["id"] for r in neo4j_rows]
+
+        sb = _get_supabase()
+        rows = (
+            sb.table("posts")
+            .select("id, title, content")
+            .in_("id", ids)
+            .execute()
+        )
+        post_map = {p["id"]: p for p in (rows.data or [])}
+
+        return [
+            {
+                "id":          r["id"],
+                "supabase_id": r["id"],
+                # title is NOT NULL in your schema so always present
+                # content can be null — fall back to title
+                "content":     post_map.get(r["id"], {}).get("content")
+                               or post_map.get(r["id"], {}).get("title")
+                               or "",
+            }
+            for r in neo4j_rows
+        ]
 
     async def _fetch_clubs(self, session) -> list[dict]:
+        # Neo4j Club has: id only
+        # Supabase clubs has: id, name (check your clubs table — add description if it exists)
         result = await session.run(
-            "MATCH (c:Club) RETURN c.id AS id, c.name AS name, c.description AS description"
+            "MATCH (c:Club) RETURN c.id AS id"
         )
-        return [dict(r) async for r in result]
+        neo4j_rows = [dict(r) async for r in result]
+        if not neo4j_rows:
+            return []
+
+        ids = [r["id"] for r in neo4j_rows]
+
+        sb = _get_supabase()
+        rows = (
+            sb.table("clubs")
+            .select("id, name")          # add ", description" if that column exists
+            .in_("id", ids)
+            .execute()
+        )
+        club_map = {c["id"]: c for c in (rows.data or [])}
+
+        return [
+            {
+                "id":          r["id"],
+                "name":        club_map.get(r["id"], {}).get("name") or "",
+                "description": "",       # add real value if column exists
+            }
+            for r in neo4j_rows
+        ]
 
     async def _fetch_edges(
         self, session, rel_type: str, src_label: str, dst_label: str
