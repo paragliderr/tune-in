@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
-import { ArrowLeft, Trophy, Film, Gamepad2, Music, Code2, Dumbbell, Users, TrendingUp } from "lucide-react";
+import { ArrowLeft, Trophy, Film, Gamepad2, Code2, Dumbbell, TrendingUp, Tv } from "lucide-react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -11,13 +11,16 @@ interface LeaderboardEntry {
   username: string;
   avatar_url: string | null;
   score: number;
-  hgt_signal?: number; // Added for backend data
+  hgt_signal?: number;
   breakdown: {
     movies?: number;
+    anime?: number;
     games?: number;
+    tech?: number;
+    fitness?: number;
     posts?: number;
-    likes?: number; // Added for backend data
-    clubs?: number; // Added for backend data
+    likes?: number;
+    clubs?: number;
   };
 }
 
@@ -26,56 +29,71 @@ interface LeaderboardEntry {
 const CATEGORIES = [
   { key: "overall",  label: "Overall",  icon: <Trophy size={14} />,   color: "text-yellow-400" },
   { key: "cinema",   label: "Cinema",   icon: <Film size={14} />,     color: "text-blue-400" },
-  { key: "games",    label: "Games",    icon: <Gamepad2 size={14} />, color: "text-emerald-400" },
-  { key: "music",    label: "Music",    icon: <Music size={14} />,    color: "text-pink-400" },
-  { key: "tech",     label: "Tech",     icon: <Code2 size={14} />,    color: "text-purple-400" },
+  { key: "anime",    label: "Anime",    icon: <Tv size={14} />,       color: "text-pink-400" },
+  { key: "gaming",   label: "Gaming",   icon: <Gamepad2 size={14} />, color: "text-emerald-400" },
   { key: "fitness",  label: "Fitness",  icon: <Dumbbell size={14} />, color: "text-orange-400" },
-  { key: "social",   label: "Social",   icon: <Users size={14} />,    color: "text-teal-400" },
+  { key: "tech",     label: "Tech",     icon: <Code2 size={14} />,    color: "text-purple-400" },
 ] as const;
 
 type CategoryKey = typeof CATEGORIES[number]["key"];
 
 // ─── Score fetchers ────────────────────────────────────────────────────────
 
-// ✅ NEW LOGIC: Fetches dynamic HGT & API scores directly from FastAPI
 async function fetchOverallLeaderboard(): Promise<LeaderboardEntry[]> {
   try {
-    // 1. Fetch the mathematical ranks from the backend
-    // Replace with your actual deployed backend URL if not local
+    const [cinema, anime, gaming, fitness, tech, { data: profiles }] = await Promise.all([
+      fetchCinemaLeaderboard(),
+      fetchAnimeLeaderboard(),
+      fetchGamingLeaderboard(),
+      fetchFitnessLeaderboard(),
+      fetchTechLeaderboard(),
+      supabase.from("profiles").select("id, username, avatar_url")
+    ]);
+
+    // Fetch HGT details from backend
     const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
     const res = await fetch(`${API_URL}/api/tune-in/leaderboard?top_k=50`);
-    
-    if (!res.ok) throw new Error("Failed to fetch from backend AI engine");
-    const backendData = await res.json();
+    const backendData = res.ok ? await res.json() : [];
 
-    if (!backendData || backendData.length === 0) return [];
+    const getScore = (arr: LeaderboardEntry[], id: string) => arr.find(x => x.user_id === id)?.score || 0;
 
-    // 2. Fetch profiles from Supabase to attach usernames and avatars
-    const userIds = backendData.map((b: any) => b.user_id);
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("id, username, avatar_url")
-      .in("id", userIds);
+    return (profiles ?? []).map(p => {
+      const cinemaScore = getScore(cinema, p.id);
+      const animeScore = getScore(anime, p.id);
+      const gamingScore = getScore(gaming, p.id);
+      const fitnessScore = getScore(fitness, p.id);
+      const techScore = getScore(tech, p.id);
 
-    const profileMap = new Map(profiles?.map((p) => [p.id, p]));
+      // CHANGE 2: Overall score formula
+      const categoryScores = [cinemaScore, animeScore, gamingScore, fitnessScore, techScore];
+      const avg = categoryScores.reduce((a, b) => a + b, 0) / categoryScores.length;
 
-    // 3. Merge backend math with frontend UI data
-    return backendData.map((b: any) => {
-      const profile = profileMap.get(b.user_id);
+      // Extract from backend data if available, default to 0
+      const backendUser = backendData.find((b: any) => b.user_id === p.id);
+      const mentorsCount = backendUser?.mentors?.length || 0;
+      const menteesCount = backendUser?.mentees?.length || 0;
+      const hgtMatchCount = mentorsCount + menteesCount;
+
+      const diversityMultiplier = 1 + Math.min(hgtMatchCount * 0.05, 0.5);
+      const overallScore = Math.round(avg * diversityMultiplier * 10) / 10;
+
       return {
-        user_id: b.user_id,
-        username: profile?.username || "User",
-        avatar_url: profile?.avatar_url || null,
-        score: b.total_score,
-        hgt_signal: b.hgt_signal,
+        user_id: p.id,
+        username: p.username || "User",
+        avatar_url: p.avatar_url,
+        score: overallScore,
         breakdown: {
-          likes: b.likes_count,
-          clubs: b.clubs_count,
-        },
+          movies: cinemaScore,
+          anime: animeScore,
+          games: gamingScore,
+          tech: techScore,
+          fitness: fitnessScore
+        }
       };
-    });
+    }).filter(e => e.score > 0).sort((a, b) => b.score - a.score).slice(0, 50);
+
   } catch (error) {
-    console.error("Overall Leaderboard fetch failed:", error);
+    console.error("Overall fetch failed:", error);
     return [];
   }
 }
@@ -83,76 +101,83 @@ async function fetchOverallLeaderboard(): Promise<LeaderboardEntry[]> {
 async function fetchCinemaLeaderboard(): Promise<LeaderboardEntry[]> {
   const [{ data: profiles }, { data: reviews }] = await Promise.all([
     supabase.from("profiles").select("id, username, avatar_url"),
-    supabase.from("movie_reviews").select("user_id, rating"),
+    supabase.from("movie_reviews").select("user_id"),
   ]);
-
   const scoreMap: Record<string, number> = {};
   reviews?.forEach((r) => { scoreMap[r.user_id] = (scoreMap[r.user_id] ?? 0) + 1; });
-
-  return (profiles ?? [])
-    .map((p) => ({ 
-      user_id: p.id, 
-      username: p.username || "User",
-      avatar_url: p.avatar_url, 
-      score: scoreMap[p.id] ?? 0, 
-      breakdown: { movies: scoreMap[p.id] ?? 0 } 
-    }))
-    .filter((e) => e.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 50);
+  return (profiles ?? []).map((p) => ({ 
+    user_id: p.id, username: p.username || "User", avatar_url: p.avatar_url, 
+    score: scoreMap[p.id] ?? 0, breakdown: { movies: scoreMap[p.id] ?? 0 } 
+  })).filter((e) => e.score > 0).sort((a, b) => b.score - a.score).slice(0, 50);
 }
 
-async function fetchGamesLeaderboard(): Promise<LeaderboardEntry[]> {
+async function fetchAnimeLeaderboard(): Promise<LeaderboardEntry[]> {
+  const [{ data: profiles }, { data: reviews }] = await Promise.all([
+    supabase.from("profiles").select("id, username, avatar_url"),
+    supabase.from("anime_reviews").select("user_id"),
+  ]);
+  const scoreMap: Record<string, number> = {};
+  reviews?.forEach((r) => { scoreMap[r.user_id] = (scoreMap[r.user_id] ?? 0) + 1; });
+  return (profiles ?? []).map((p) => ({ 
+    user_id: p.id, username: p.username || "User", avatar_url: p.avatar_url, 
+    score: scoreMap[p.id] ?? 0, breakdown: { anime: scoreMap[p.id] ?? 0 } 
+  })).filter((e) => e.score > 0).sort((a, b) => b.score - a.score).slice(0, 50);
+}
+
+async function fetchGamingLeaderboard(): Promise<LeaderboardEntry[]> {
   const [{ data: profiles }, { data: reviews }] = await Promise.all([
     supabase.from("profiles").select("id, username, avatar_url"),
     supabase.from("game_reviews").select("user_id"),
   ]);
-
   const scoreMap: Record<string, number> = {};
   reviews?.forEach((r) => { scoreMap[r.user_id] = (scoreMap[r.user_id] ?? 0) + 1; });
-
-  return (profiles ?? [])
-    .map((p) => ({ 
-      user_id: p.id, 
-      username: p.username || "User",
-      avatar_url: p.avatar_url, 
-      score: scoreMap[p.id] ?? 0, 
-      breakdown: { games: scoreMap[p.id] ?? 0 } 
-    }))
-    .filter((e) => e.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 50);
+  return (profiles ?? []).map((p) => ({ 
+    user_id: p.id, username: p.username || "User", avatar_url: p.avatar_url, 
+    score: scoreMap[p.id] ?? 0, breakdown: { games: scoreMap[p.id] ?? 0 } 
+  })).filter((e) => e.score > 0).sort((a, b) => b.score - a.score).slice(0, 50);
 }
 
-async function fetchClubLeaderboard(clubSlug: string): Promise<LeaderboardEntry[]> {
-  const { data: club } = await supabase.from("clubs").select("id, name").eq("slug", clubSlug).single();
-  if (!club) return [];
-
-  const [{ data: members }, { data: posts }] = await Promise.all([
-    supabase.from("club_members").select("user_id").eq("club_id", club.id),
-    supabase.from("posts").select("user_id, like_count, comment_count").eq("club_id", club.id),
+// CHANGE 3: Custom Fitness logic using Strava
+async function fetchFitnessLeaderboard(): Promise<LeaderboardEntry[]> {
+  const [{ data: profiles }, { data: strava }] = await Promise.all([
+    supabase.from("profiles").select("id, username, avatar_url"),
+    supabase.from("strava_stats").select("user_id, total_distance_km, score")
   ]);
 
-  const memberIds = members?.map((m) => m.user_id) ?? [];
-  if (!memberIds.length) return [];
-
-  const { data: profiles } = await supabase.from("profiles").select("id, username, avatar_url").in("id", memberIds);
-
-  const postScore: Record<string, number> = {};
-  posts?.forEach((p) => {
-    postScore[p.user_id] = (postScore[p.user_id] ?? 0) + 1 + (p.like_count ?? 0) * 2 + (p.comment_count ?? 0);
+  const scoreMap: Record<string, number> = {};
+  strava?.forEach(s => {
+    scoreMap[s.user_id] = (scoreMap[s.user_id] || 0) + (s.total_distance_km || 0) * 0.5 + (s.score || 0) * 0.1;
   });
 
-  return (profiles ?? [])
-    .map((p) => ({ 
-      user_id: p.id, 
-      username: p.username || "User",
-      avatar_url: p.avatar_url, 
-      score: postScore[p.id] ?? 0, 
-      breakdown: { posts: postScore[p.id] ?? 0 } 
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 50);
+  return (profiles ?? []).map(p => ({
+    user_id: p.id, username: p.username || "User", avatar_url: p.avatar_url,
+    score: scoreMap[p.id] ? Math.round(scoreMap[p.id] * 10) / 10 : 0, 
+    breakdown: { fitness: scoreMap[p.id] ?? 0 }
+  })).filter(e => e.score > 0).sort((a,b) => b.score - a.score).slice(0, 50);
+}
+
+// CHANGE 3: Custom Tech logic using GitHub + Clubs
+async function fetchTechLeaderboard(): Promise<LeaderboardEntry[]> {
+  const [{ data: profiles }, { data: github }, { data: clubs }] = await Promise.all([
+    supabase.from("profiles").select("id, username, avatar_url"),
+    supabase.from("github_stats").select("user_id, total_commits, streak_days"),
+    supabase.from("club_members").select("user_id, clubs!inner(name)").ilike("clubs.name", "%tech%")
+  ]);
+
+  const scoreMap: Record<string, number> = {};
+  
+  github?.forEach(g => {
+    scoreMap[g.user_id] = (scoreMap[g.user_id] || 0) + (g.total_commits || 0) * 1.0 + (g.streak_days || 0) * 5.0;
+  });
+  
+  clubs?.forEach(c => {
+    scoreMap[c.user_id] = (scoreMap[c.user_id] || 0) + 15.0; // techClubs * 15
+  });
+
+  return (profiles ?? []).map(p => ({
+    user_id: p.id, username: p.username || "User", avatar_url: p.avatar_url,
+    score: scoreMap[p.id] ?? 0, breakdown: { tech: scoreMap[p.id] ?? 0 }
+  })).filter(e => e.score > 0).sort((a,b) => b.score - a.score).slice(0, 50);
 }
 
 // ─── Avatar ────────────────────────────────────────────────────────────────
@@ -210,21 +235,23 @@ const Leaderboard = () => {
 
   useEffect(() => {
     setLoading(true);
-    const fetch = async () => {
+    const load = async () => {
       let data: LeaderboardEntry[] = [];
-      if (category === "overall") data = await fetchOverallLeaderboard();
-      else if (category === "cinema") data = await fetchCinemaLeaderboard();
-      else if (category === "games") data = await fetchGamesLeaderboard();
-      else data = await fetchClubLeaderboard(category); 
+      if (category === "overall")       data = await fetchOverallLeaderboard();
+      else if (category === "cinema")   data = await fetchCinemaLeaderboard();
+      else if (category === "anime")    data = await fetchAnimeLeaderboard();
+      else if (category === "gaming")   data = await fetchGamingLeaderboard();
+      else if (category === "tech")     data = await fetchTechLeaderboard();
+      else if (category === "fitness")  data = await fetchFitnessLeaderboard();
       
       setEntries(data);
       if (currentUserId) {
-        const idx = data.findIndex((e) => e.user_id === currentUserId);
+        const idx = data.findIndex(e => e.user_id === currentUserId);
         setCurrentUserRank(idx >= 0 ? idx + 1 : null);
       }
       setLoading(false);
     };
-    fetch();
+    load();
   }, [category, currentUserId]);
 
   const maxScore = entries[0]?.score ?? 1;
@@ -398,17 +425,22 @@ const PodiumCard = ({
 // ─── Breakdown line ────────────────────────────────────────────────────────
 
 const BreakdownLine = ({ entry, category }: { entry: LeaderboardEntry; category: CategoryKey }) => {
-  const { breakdown, hgt_signal } = entry;
+  const { breakdown } = entry;
   const parts: string[] = [];
   
   if (category === "overall") {
-    if (hgt_signal !== undefined) parts.push(`HGT: ${hgt_signal.toFixed(2)}`);
-    if (breakdown.likes)          parts.push(`${breakdown.likes} likes`);
-    if (breakdown.clubs)          parts.push(`${breakdown.clubs} clubs`);
+    if (breakdown.tech)    parts.push(`${breakdown.tech} tech`);
+    if (breakdown.fitness) parts.push(`${breakdown.fitness} fitness`);
+    if (breakdown.movies)  parts.push(`${breakdown.movies} movies`);
+    if (breakdown.games)   parts.push(`${breakdown.games} games`);
+  } else if (category === "tech") {
+    if (breakdown.tech)    parts.push(`${breakdown.tech} points`);
+  } else if (category === "fitness") {
+    if (breakdown.fitness) parts.push(`${breakdown.fitness} points`);
   } else {
     if (breakdown.movies) parts.push(`${breakdown.movies} films`);
+    if (breakdown.anime)  parts.push(`${breakdown.anime} series`);
     if (breakdown.games)  parts.push(`${breakdown.games} games`);
-    if (breakdown.posts)  parts.push(`${breakdown.posts} posts`);
   }
 
   return (
@@ -422,13 +454,12 @@ const BreakdownLine = ({ entry, category }: { entry: LeaderboardEntry; category:
 
 const ScoringNote = ({ category }: { category: CategoryKey }) => {
   const notes: Record<CategoryKey, string> = {
-    overall:  "AI Blended Score = (Likes × 20) + (Clubs × 15) + (HGT Signal × 100) + API Connections",
-    cinema:   "Score = total movies logged via Letterboxd / reviews",
-    games:    "Score = total games reviewed",
-    music:    "Score = posts + engagement in Music club",
-    tech:     "Score = posts + engagement in Tech club",
-    fitness:  "Score = posts + engagement in Fitness club",
-    social:   "Score = posts + engagement in Social club",
+    overall:  "AI Average of all categories × Graph Diversity Multiplier",
+    cinema:   "Score = total movies reviewed",
+    anime:    "Score = total anime reviewed",
+    gaming:   "Score = total games reviewed",
+    tech:     "Score = GitHub commits + (streak × 5) + (Tech clubs × 15)",
+    fitness:  "Score = (Strava km × 0.5) + (Strava points × 0.1)",
   };
   return (
     <p className="text-center text-xs text-muted-foreground/60 pb-2">

@@ -91,13 +91,14 @@ class HGTConfig:
 # ── Cached graph state (rebuilt on demand) ───────────────────────────────────
 @dataclass
 class GraphCache:
-    data:            object     = None   # HeteroData
+    data:            object     = None
     id_maps:         dict       = field(default_factory=dict)
     supabase_to_idx: dict       = field(default_factory=dict)
     user_embeddings: np.ndarray = None
     user_scores:     np.ndarray = None
     post_scores:     np.ndarray = None
     built_at:        float      = 0.0
+    all_blended_scores: list    = field(default_factory=list)
 
     def is_stale(self, ttl_seconds: int = 300) -> bool:
         return (time.time() - self.built_at) > ttl_seconds
@@ -164,102 +165,111 @@ class ScoringService:
         self._cache          = GraphCache()
         self._model: Optional[TuneInHGT] = None
         self._lock           = asyncio.Lock()
+        self.supabase        = get_supabase()
 
-    async def get_user_dashboard(self, user_uuid: str, top_k: int = 5) -> dict:
-        await self._ensure_fresh_cache()
+    def get_all_user_scores(self) -> dict:
+        """Single source of truth. Called by everyone."""
+        profiles = self.supabase.table("profiles").select("id").execute().data
+        return {p["id"]: self._compute_score(p["id"]) for p in profiles}
 
-        idx = self._cache.supabase_to_idx.get(user_uuid)
-        if idx is None:
-            raise ValueError(f"Supabase UUID '{user_uuid}' not found in Neo4j graph cache.")
+    def _compute_score(self, user_id: str) -> float:
+        score = 0.0
+        # Post likes
+        likes = self.supabase.table("post_reactions")\
+            .select("id").eq("user_id", user_id).eq("reaction", "like").execute().data
+        score += len(likes) * 2.0
+        # Club memberships  
+        clubs = self.supabase.table("club_members")\
+            .select("id").eq("user_id", user_id).execute().data
+        score += len(clubs) * 15.0
+        # Strava
+        strava = self.supabase.table("strava_stats")\
+            .select("total_distance_km").eq("user_id", user_id).execute().data
+        if strava:
+            score += (strava[0].get("total_distance_km") or 0) * 0.5
+        # GitHub
+        github = self.supabase.table("github_stats")\
+            .select("total_commits, streak_days").eq("user_id", user_id).execute().data
+        if github:
+            score += (github[0].get("total_commits") or 0) * 1.0
+            score += (github[0].get("streak_days") or 0) * 5.0
+        return round(score, 1)
 
-        scores     = self._cache.user_scores
-        embeddings = self._cache.user_embeddings
-        data       = self._cache.data
-        cfg        = self._config
-        sb         = get_supabase()
-
-        # ── 1. Calculate Current User's Total Blended Score ─────────────────
-        hgt_raw = float(scores[idx])
-        likes_count = self._count_edges(data, ("user", "LIKES",  "post"), idx, side=0)
-        clubs_count = self._count_edges(data, ("user", "JOINED", "club"), idx, side=0)
-
-        base_neo4j_score = (cfg.weight_likes * likes_count * 20) + (cfg.weight_clubs * clubs_count * 15) + (cfg.weight_hgt_signal * max(0, hgt_raw) * 100)
-        current_supa_stats = await fetch_dynamic_supabase_stats(user_uuid)
+    def get_hgt_matches(self, user_id: str) -> dict:
+        my_clubs = self._get_club_set(user_id)
+        my_cats = self._get_liked_categories(user_id)
+        all_scores = self.get_all_user_scores()
+        my_score = all_scores.get(user_id, 0)
         
-        current_total_score = round(max(0.0, base_neo4j_score + current_supa_stats["score"]), 1)
-
-        # ── 2. Cosine-similarity target match & Mentor filtering ───────────
-        target_vec = embeddings[idx].reshape(1, -1)
-        sim_scores = cosine_similarity(target_vec, embeddings).flatten()
-        sim_scores[idx] = -1  # exclude self
-
-        # Look at top 20 closest graph neighbors to find potential mentors
-        top_indices = np.argsort(sim_scores)[::-1][:20]
-        supa_ids    = data["user"].supabase_ids
-
-        recommendations = []
-        for sim_idx in top_indices:
-            sim_idx = int(sim_idx)
-            sim_val = float(sim_scores[sim_idx])
-            
-            if sim_val < 0.1:
-                continue
-                
-            rec_supabase_id = supa_ids[sim_idx]
-            
-            # Calculate Candidate's Total Score
-            rec_raw = float(scores[sim_idx])
-            rec_likes = self._count_edges(data, ("user", "LIKES", "post"), sim_idx, side=0)
-            rec_clubs = self._count_edges(data, ("user", "JOINED", "club"), sim_idx, side=0)
-            rec_base = (cfg.weight_likes * rec_likes * 20) + (cfg.weight_clubs * rec_clubs * 15) + (cfg.weight_hgt_signal * max(0, rec_raw) * 100)
-            
-            rec_supa_stats = await fetch_dynamic_supabase_stats(rec_supabase_id)
-            rec_total_score = rec_base + rec_supa_stats["score"]
-
-            # LEADERBOARD LOGIC: Only recommend if they outrank the current user
-            if rec_total_score > current_total_score:
-                # Fetch profile info for UI
-                prof_res = sb.table("profiles").select("username, bio").eq("id", rec_supabase_id).execute()
-                prof = prof_res.data[0] if prof_res.data else {}
-                
-                recommendations.append({
-                    "id":           rec_supabase_id,
-                    "type":         "user",
-                    "title":        prof.get("username") or f"User @{rec_supabase_id[:8]}",
-                    "subtitle":     prof.get("bio") or "Similar multi-domain behavior",
-                    "impact":       f"Score: {int(rec_total_score)}",
-                    "match_score":  int(sim_val * 100),
-                    "match_reason": "Top performer in shared interests",
-                    "actionPath":   f"/user/{rec_supabase_id}",
-                    "sort_score":   rec_total_score
-                })
-
-        # Sort successful recommendations by their total score, limit to top_k
-        recommendations = sorted(recommendations, key=lambda x: x["sort_score"], reverse=True)[:top_k]
-        
-        # Clean up sort key before sending to frontend
-        for r in recommendations:
-            r.pop("sort_score", None)
-
-        # ── 3. Combine Connections List ────────────────────────────────────
-        api_connections = [
-            {"id": "social", "name": "Clubs Joined", "points": clubs_count * 15, "connected": clubs_count > 0, "icon": "users"},
-            {"id": "posts", "name": "Posts Liked", "points": likes_count * 20, "connected": likes_count > 0, "icon": "heart"},
-        ]
-        api_connections.extend(current_supa_stats["connections"])
-
-        # ── 4. Global rank estimation ──────────────────────────────────────
-        all_scores_tensor = torch.tensor(scores)
-        base_rank = int((all_scores_tensor > hgt_raw).sum().item()) + 1
-
+        results = []
+        for other_id, other_score in all_scores.items():
+            if other_id == user_id: continue
+            other_clubs = self._get_club_set(other_id)
+            other_cats = self._get_liked_categories(other_id)
+            sim = self._jaccard(my_clubs | my_cats, other_clubs | other_cats)
+            match_pct = round(sim * 100)
+            if match_pct < 30: continue
+            results.append({
+                "user_id": other_id,
+                "score": other_score,
+                "match_pct": match_pct,
+                "role": "mentor" if other_score > my_score else "mentee",
+                "shared_clubs": list(my_clubs & other_clubs),
+            })
+        results.sort(key=lambda x: x["match_pct"], reverse=True)
         return {
-            "user_id":         user_uuid,
-            "total_score":     current_total_score,
-            "rank":            base_rank,
-            "total_users":     len(supa_ids),
-            "hgt_raw_signal":  round(hgt_raw, 4),
-            "api_connections": api_connections,
-            "recommendations": recommendations,
+            "mentors": [r for r in results if r["role"] == "mentor"][:5],
+            "mentees": [r for r in results if r["role"] == "mentee"][:5],
+        }
+
+    def _get_club_set(self, user_id: str) -> set:
+        rows = self.supabase.table("club_members")\
+            .select("clubs(name)").eq("user_id", user_id).execute().data
+        return {r["clubs"]["name"].lower() for r in rows if r.get("clubs")}
+
+    def _get_liked_categories(self, user_id: str) -> set:
+        rows = self.supabase.table("post_reactions")\
+            .select("posts(category)").eq("user_id", user_id)\
+            .eq("reaction", "like").execute().data
+        return {r["posts"]["category"].lower() for r in rows 
+                if r.get("posts") and r["posts"].get("category")}
+
+    def _jaccard(self, a: set, b: set) -> float:
+        if not a and not b: return 0.0
+        return len(a & b) / len(a | b)
+
+    def get_user_activity(self, target_user_id: str) -> dict:
+        """Full profile for mentor/mentee click-through."""
+        return {
+            "clubs": self._get_club_set(target_user_id),
+            "post_likes": self.supabase.table("post_reactions")
+                .select("posts(title, category)").eq("user_id", target_user_id)
+                .eq("reaction","like").execute().data,
+            "strava": self.supabase.table("strava_stats")
+                .select("total_distance_km,total_elevation_m,total_moving_time_hrs,score")
+                .eq("user_id", target_user_id).execute().data,
+            "github": self.supabase.table("github_stats")
+                .select("username,total_commits,streak_days,score")
+                .eq("user_id", target_user_id).execute().data,
+            "movie_reviews": self.supabase.table("movie_reviews")
+                .select("*").eq("user_id", target_user_id).execute().data,
+            "game_reviews": self.supabase.table("game_reviews")
+                .select("*").eq("user_id", target_user_id).execute().data,
+        }
+
+    async def get_user_dashboard(self, user_id: str) -> dict:
+        """Fixed: rank and score both come from get_all_user_scores."""
+        all_scores = self.get_all_user_scores()
+        sorted_users = sorted(all_scores.items(), key=lambda x: x[1], reverse=True)
+        rank = next((i+1 for i, (uid, _) in enumerate(sorted_users) if uid == user_id), None)
+        total_score = all_scores.get(user_id, 0)
+        hgt = self.get_hgt_matches(user_id)
+        return {
+            "total_score": total_score,
+            "rank": rank,
+            "total_users": len(all_scores),
+            "mentors": hgt["mentors"],
+            "mentees": hgt["mentees"],
         }
 
     async def get_leaderboard(self, top_k: int = 20) -> list[dict]:
@@ -270,26 +280,33 @@ class ScoringService:
         cfg      = self._config
         supa_ids = data["user"].supabase_ids
 
-        # Fetch all dynamic stats in bulk if possible, but async loop is okay for now
         results = []
+        all_blended = []
+
         for idx, raw_score in enumerate(scores):
             user_uuid = supa_ids[idx]
             likes = self._count_edges(data, ("user", "LIKES",  "post"), idx, side=0)
             clubs = self._count_edges(data, ("user", "JOINED", "club"), idx, side=0)
-            
-            base = (cfg.weight_likes * likes * 20) + (cfg.weight_clubs * clubs * 15) + (cfg.weight_hgt_signal * max(0, float(raw_score)) * 100)
-            
-            supa_stats = await fetch_dynamic_supabase_stats(user_uuid)
-            blended = round(max(0.0, base + supa_stats["score"]), 1)
-            
+
+            base = (cfg.weight_likes * likes * 20 +
+                    cfg.weight_clubs * clubs * 15 +
+                    cfg.weight_hgt_signal * max(0, float(raw_score)) * 100)
+
+            supa = await fetch_dynamic_supabase_stats(user_uuid)
+            blended = round(max(0.0, base + supa["score"]), 1)
+            all_blended.append(blended)
+
             results.append({
-                "rank":        0,             
-                "user_id":     user_uuid, 
+                "rank":        0,
+                "user_id":     user_uuid,
                 "total_score": blended,
                 "likes_count": likes,
                 "clubs_count": clubs,
                 "hgt_signal":  round(float(raw_score), 4),
             })
+
+        # Store blended scores in cache so dashboard rank is consistent
+        self._cache.all_blended_scores = all_blended
 
         results.sort(key=lambda x: x["total_score"], reverse=True)
         for i, r in enumerate(results[:top_k]):
