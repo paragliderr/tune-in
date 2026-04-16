@@ -38,32 +38,6 @@ async function fetchOverallLeaderboard(): Promise<LeaderboardEntry[]> {
 
   // ❌ OLD LOGIC (COMMENTED OUT — DO NOT DELETE)
   /*
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("id, username, avatar_url");
-
-  return (profiles ?? [])
-    .map((p, i) => {
-      const hgtScore = null;
-
-      return {
-        user_id: p.id,
-        username: p.username || `User_${i}`,
-        avatar_url: p.avatar_url,
-        score: hgtScore ?? 0,
-        breakdown: {
-          movies: 0,
-          games: 0,
-          posts: 0,
-        },
-      };
-    })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 50);
-  */
-
-  // ✅ NEW LOGIC (YOUR SCORING SYSTEM)
-
   const [{ data: profiles }, { data: posts }, { data: movieReviews }, { data: gameReviews }] = await Promise.all([
     supabase.from("profiles").select("id, username, avatar_url"),
     supabase.from("posts").select("user_id"),
@@ -113,7 +87,60 @@ async function fetchOverallLeaderboard(): Promise<LeaderboardEntry[]> {
     .filter((e) => e.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 50);
+  */
 
+  // ✅ NEW HGT LOGIC (ENGAGEMENT-BASED SCORING)
+
+  const [{ data: profiles }, { data: posts }, { data: movieReviews }, { data: gameReviews }] = await Promise.all([
+    supabase.from("profiles").select("id, username, avatar_url"),
+    supabase.from("posts").select("user_id, like_count, comment_count"),
+    supabase.from("movie_reviews").select("user_id"),
+    supabase.from("game_reviews").select("user_id"),
+  ]);
+
+  const scoreMap: Record<string, number> = {};
+  const breakdownMap: Record<string, { posts: number; movies: number; games: number }> = {};
+
+  // Initialize users
+  profiles?.forEach((p) => {
+    scoreMap[p.id] = 0;
+    breakdownMap[p.id] = { posts: 0, movies: 0, games: 0 };
+  });
+
+  // Posts (HGT logic)
+  posts?.forEach((p) => {
+    const base = 5;
+    const engagement =
+      (p.like_count ?? 0) * 2 +
+      (p.comment_count ?? 0) * 3;
+
+    scoreMap[p.user_id] += base + engagement;
+    breakdownMap[p.user_id].posts += 1;
+  });
+
+  // Movie reviews
+  movieReviews?.forEach((m) => {
+    scoreMap[m.user_id] += 10;
+    breakdownMap[m.user_id].movies += 1;
+  });
+
+  // Game reviews
+  gameReviews?.forEach((g) => {
+    scoreMap[g.user_id] += 10;
+    breakdownMap[g.user_id].games += 1;
+  });
+
+  return (profiles ?? [])
+    .map((p) => ({
+      user_id: p.id,
+      username: p.username || "User",
+      avatar_url: p.avatar_url,
+      score: scoreMap[p.id] ?? 0,
+      breakdown: breakdownMap[p.id],
+    }))
+    .filter((e) => e.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 50);
 }
 
 async function fetchCinemaLeaderboard(): Promise<LeaderboardEntry[]> {

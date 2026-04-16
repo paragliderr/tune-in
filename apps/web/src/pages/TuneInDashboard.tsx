@@ -2,43 +2,81 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { supabase } from "@/lib/supabase";
-import { 
-  ArrowLeft, Trophy, Sparkles, ChevronRight, AlertCircle, 
-  Link2, Users, Heart 
+import {
+  ArrowLeft, Trophy, Film, Gamepad2, Github, Music,
+  Dumbbell, TrendingUp, Sparkles, ChevronRight, AlertCircle, Link2
 } from "lucide-react";
 
-// ─── Dynamic Icon Mapper ───────────────────────────────────────────────────
-const getIcon = (iconName: string) => {
-  switch (iconName) {
-    case "users": return <Users size={18} />;
-    case "heart": return <Heart size={18} />;
-    default: return <Link2 size={18} />;
-  }
-};
 
-// ─── UI Helpers ────────────────────────────────────────────────────────────
-const Avatar = ({ url, title, size = 36 }: { url: string | null; title: string; size?: number }) => {
+// 🔥 HGT FETCH
+async function fetchHGTProfile(userId: string) {
+  try {
+    const res = await fetch(`/api/tune-in/dashboard?user_id=${userId}`);
+    if (!res.ok) throw new Error("API failed");
+
+    const data = await res.json();
+
+    return {
+      total_score: data.total_score ?? 0,
+      rank: data.rank ?? 0,
+      points_to_next_rank: data.points_to_next_rank ?? 0,
+
+      api_connections: data.api_connections ?? [],
+      recommendations: data.recommendations ?? [],
+
+      // ✅ NEW: real users from HGT
+      recent_connections: data.recent_connections ?? []
+    };
+
+  } catch (err) {
+    console.warn("Fallback triggered:", err);
+
+    return {
+      total_score: 0,
+      rank: 0,
+      points_to_next_rank: 0,
+
+      api_connections: [],
+      recommendations: [],
+
+      // ✅ EMPTY fallback
+      recent_connections: []
+    };
+  }
+}
+
+
+// ─── Avatar ─────────────────────────────────────────────
+const Avatar = ({ url, title, size = 36 }: any) => {
   const initials = title.replace('@', '').slice(0, 2).toUpperCase() || "??";
+
   return url ? (
-    <img src={url} alt={title} style={{ width: size, height: size }} className="rounded-full object-cover shadow-sm" />
+    <img src={url} alt={title}
+      style={{ width: size, height: size }}
+      className="rounded-full object-cover shadow-sm"
+    />
   ) : (
-    <div style={{ width: size, height: size }} className="rounded-full bg-muted flex items-center justify-center text-muted-foreground font-bold text-[10px] shadow-sm tracking-wider">
+    <div style={{ width: size, height: size }}
+      className="rounded-full bg-muted flex items-center justify-center text-muted-foreground font-bold text-[10px] shadow-sm">
       {initials}
     </div>
   );
 };
 
-// ─── Main Component ────────────────────────────────────────────────────────
+
+// ─── MAIN ─────────────────────────────────────────────
 export default function TuneInDashboard() {
   const [user, setUser] = useState<any>(null);
   const [hgtData, setHgtData] = useState<any>(null);
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [recentConnections, setRecentConnections] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
   const navigate = useNavigate();
 
-  // ✅ 1. Get user
+
+  // ✅ GET USER
   useEffect(() => {
     const getUser = async () => {
       const { data } = await supabase.auth.getUser();
@@ -47,7 +85,8 @@ export default function TuneInDashboard() {
     getUser();
   }, []);
 
-  // ✅ 2. Fetch ALL data 
+
+  // ✅ FETCH EVERYTHING
   useEffect(() => {
     if (!user?.id) return;
 
@@ -56,43 +95,43 @@ export default function TuneInDashboard() {
       setError(false);
 
       try {
-        // 🔥 1. Fetch HGT Dashboard Data (Current User)
-        // Changed to RESTful URL matching the backend
-        const hgtRes = await fetch(`/api/tune-in/dashboard/${user.id}`);
-        if (!hgtRes.ok) throw new Error("Dashboard API failed");
-        const graphData = await hgtRes.json();
+        // 🔥 HGT
+        const graphData = await fetchHGTProfile(user.id);
         setHgtData(graphData);
 
-        // 🔥 2. Fetch Real Leaderboard
-        const lbRes = await fetch("/api/tune-in/leaderboard");
-        if (!lbRes.ok) throw new Error("Leaderboard API failed");
-        const lbJson = await lbRes.json();
-        
-        // Extract array from the {"leaderboard": [...]} wrapper
-        const lbData = lbJson.leaderboard || [];
+        // ✅ NEW
+        setRecentConnections(graphData.recent_connections || []);
 
-        // 🔥 3. Get profile info to attach usernames/avatars
+        // 🔥 LEADERBOARD
+        const res = await fetch("/api/tune-in/leaderboard");
+        const data = await res.json();
+
         const { data: profiles } = await supabase
           .from("profiles")
           .select("id, username, avatar_url");
 
         const profileMap = new Map();
         (profiles || []).forEach((p) => {
-          profileMap.set(p.id, p);
+          profileMap.set(String(p.id), p);
         });
 
-        // 🔥 4. Merge backend math + Supabase profiles
-        const mergedLeaderboard = lbData.map((entry: any) => {
-          const profile = profileMap.get(entry.user_id);
+        const merged = data.map((entry: any) => {
+          const uid = String(entry.user_id || entry.id || "");
+          const profile = profileMap.get(uid);
+
           return {
-            user_id: entry.user_id, // Keep ID for navigation
-            username: profile?.username || "User",
-            avatar_url: profile?.avatar_url,
-            score: entry.total_score ?? 0, // Backend sends total_score now
+            user_id: uid,
+            username: profile?.username ?? "User",
+            avatar_url: profile?.avatar_url ?? null,
+            score: entry.score ?? 0,
           };
         });
 
-        setLeaderboard(mergedLeaderboard);
+        setLeaderboard(
+          merged
+            .filter((u) => u.user_id !== user.id)
+            .sort((a, b) => b.score - a.score)
+        );
 
       } catch (err) {
         console.error(err);
@@ -105,186 +144,113 @@ export default function TuneInDashboard() {
     initData();
   }, [user?.id]);
 
-  // ✅ LOADING UI
-  if (loading) {
-    return <div className="p-6 text-muted-foreground animate-pulse">Loading AI Engine...</div>;
-  }
 
-  // ✅ ERROR UI
-  if (error) {
-    return <div className="p-6 text-red-500">Failed to connect to the Tune-In AI.</div>;
-  }
+  if (loading) return <div className="p-6">Loading Tune-In...</div>;
+  if (error) return <div className="p-6 text-red-500">Failed to load Tune-In</div>;
+
 
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
-      <header className="h-14 border-b border-border flex items-center px-5 gap-4 flex-shrink-0 bg-background/80 backdrop-blur-xl z-20">
-        <button onClick={() => navigate(-1)} className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-all">
+
+      {/* HEADER */}
+      <header className="h-14 border-b flex items-center px-5 gap-4">
+        <button onClick={() => navigate(-1)}>
           <ArrowLeft size={18} />
         </button>
         <div className="flex items-center gap-2.5">
           <Sparkles size={16} className="text-primary animate-pulse" />
-          <span className="text-sm font-bold tracking-wide">Tune-In Engine</span>
+          <span className="text-sm font-bold">Tune-In Engine</span>
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-muted">
+
+      <div className="flex-1 overflow-y-auto">
         <div className="max-w-6xl mx-auto px-5 py-8">
-          
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            
-            {/* ── LEFT COL: HGT Profile & Recommendations ── */}
+
+            {/* LEFT */}
             <div className="lg:col-span-2 space-y-6">
-              
-              {/* Score Breakdown Panel */}
-              <div className="rounded-2xl border border-border bg-card/60 backdrop-blur-sm p-6 shadow-sm">
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h2 className="text-xl font-bold">Your Multi-Domain Graph</h2>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      API Connections & Point Generators
-                    </p>
+
+              {/* CONNECTIONS */}
+              <div className="p-6 border rounded-2xl">
+                <h2 className="text-xl font-bold mb-4">Your Graph</h2>
+
+                {(hgtData?.api_connections ?? []).map((api: any) => (
+                  <div key={api.id} className="flex justify-between py-2">
+                    <span>{api.name}</span>
+                    <span>{api.points ?? 0}</span>
                   </div>
-
-                  <div className="text-right">
-                    <div className="text-2xl font-black text-primary">
-                      {hgtData?.total_score ?? 0}
-                    </div>
-                    <div className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">
-                      Total Points
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {(hgtData?.api_connections ?? []).map((api: any) => (
-                    <div
-                      key={api.id}
-                      className={`flex items-center justify-between p-3 rounded-xl border ${
-                        api.connected
-                          ? "bg-background/50 border-border/50"
-                          : "bg-red-500/5 border-red-500/20"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 text-muted-foreground">
-                        {/* Render dynamic icon from backend string */}
-                        <div className={api.connected ? "text-primary" : "text-muted-foreground"}>
-                          {getIcon(api.icon)}
-                        </div>
-                        <span className="text-sm font-bold text-foreground">{api.name}</span>
-                      </div>
-
-                      <div className="text-right">
-                        <span
-                          className={`text-sm font-black ${
-                            api.connected ? "text-foreground" : "text-red-400"
-                          }`}
-                        >
-                          {api.points ?? 0}
-                        </span>
-
-                        {api.connected ? (
-                          <div className="text-[9px] text-emerald-500 font-bold uppercase tracking-wide">
-                            Connected
-                          </div>
-                        ) : (
-                          <div className="text-[9px] text-red-400 font-bold uppercase tracking-wide flex items-center justify-end gap-1 mt-0.5">
-                            <AlertCircle size={10} /> Disconnected
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-
-                  {(hgtData?.api_connections ?? []).length === 0 && (
-                    <div className="text-sm text-muted-foreground col-span-full text-center py-4">
-                      Join clubs and like posts to start generating points!
-                    </div>
-                  )}
-                </div>
+                ))}
               </div>
 
-              {/* Actionable Recommendations */}
-              <div className="rounded-2xl border border-border bg-card/60 backdrop-blur-sm p-6 shadow-sm">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="text-primary w-5 h-5" />
-                    <h2 className="text-lg font-bold">Network Proximity</h2>
-                  </div>
-                  {hgtData?.rank > 0 && (
-                    <div className="text-xs font-bold px-3 py-1 bg-muted rounded-full">
-                      Rank #{hgtData.rank} of {hgtData.total_users || "?"}
-                    </div>
-                  )}
-                </div>
-                
-                <p className="text-xs text-muted-foreground mb-5">
-                  Here are users the AI model flagged as highly similar to your behavioral graph:
-                </p>
+              {/* RECOMMENDATIONS */}
+              <div className="p-6 border rounded-2xl">
+                <h2 className="text-lg font-bold mb-4">Recommendations</h2>
 
-                <div className="space-y-3">
-                  {(hgtData?.recommendations ?? []).length === 0 ? (
-                    <div className="text-center text-sm text-muted-foreground py-6 border border-dashed rounded-xl border-border">
-                      Not enough data yet. Like more posts to get matched!
-                    </div>
-                  ) : hgtData.recommendations.map((rec: any) => (
-                    <motion.div 
-                      key={rec.id} 
-                      whileHover={{ scale: 1.01 }} 
-                      onClick={() => navigate(rec.actionPath)}
-                      className="group cursor-pointer flex items-center justify-between p-4 rounded-xl border border-border bg-background hover:border-primary/50 transition-all shadow-sm"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
-                          <Users size={18} />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-bold group-hover:text-primary transition-colors">{rec.title}</h4>
-                          <p className="text-xs text-muted-foreground mt-0.5">{rec.subtitle} • {rec.match_score}% Match</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="px-2 py-1 bg-emerald-500/10 text-emerald-500 text-[10px] font-black uppercase tracking-wider rounded-md border border-emerald-500/20">
-                          {rec.impact}
-                        </span>
-                        <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
+                {hgtData?.recommendations.map((rec: any) => (
+                  <motion.div key={rec.id}
+                    className="p-3 border rounded-xl mb-2 cursor-pointer"
+                    onClick={() => navigate(rec.actionPath)}>
+                    {rec.title}
+                  </motion.div>
+                ))}
               </div>
             </div>
 
-            {/* ── RIGHT COL: Global Leaderboard ── */}
-            <div className="lg:col-span-1">
-              <div className="rounded-2xl border border-border bg-card/60 backdrop-blur-xl overflow-hidden shadow-sm">
-                <div className="px-5 py-4 border-b border-border bg-gradient-to-br from-primary/10 to-transparent">
-                  <div className="flex items-center gap-2 font-bold">
-                    <Trophy size={16} className="text-yellow-500" />
-                    <span>Global Rankings</span>
-                  </div>
+
+            {/* RIGHT */}
+            <div className="space-y-6">
+
+              {/* LEADERBOARD */}
+              <div className="border rounded-2xl">
+                <div className="p-4 border-b font-bold flex gap-2">
+                  <Trophy size={16} /> Rankings
                 </div>
 
-                <div className="divide-y divide-border/50">
-                  {leaderboard.length === 0 ? (
-                    <div className="p-5 text-center text-xs text-muted-foreground">No rankings available yet.</div>
-                  ) : leaderboard.map((userObj, idx) => (
-                    <div 
-                      key={idx} 
-                      onClick={() => navigate(`/user/${userObj.user_id}`)} 
-                      className="flex items-center gap-3 px-4 py-3 hover:bg-muted/40 cursor-pointer transition-colors"
-                    >
-                      <div className="w-6 text-center font-black text-muted-foreground text-xs">{idx + 1}</div>
-                      <Avatar url={userObj.avatar_url} title={userObj.username} size={32} />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-bold truncate">@{userObj.username}</div>
-                      </div>
-                      <div className="text-sm font-black text-primary">
-                        {userObj.score}
+                {leaderboard.map((u, i) => (
+                  <div key={i}
+                    className="flex items-center gap-3 p-3 cursor-pointer"
+                    onClick={() => navigate(`/user/${u.username}`)}>
+
+                    <div>{i + 1}</div>
+                    <Avatar url={u.avatar_url} title={u.username} size={32} />
+                    <div className="flex-1">@{u.username}</div>
+                    <div>{u.score}</div>
+                  </div>
+                ))}
+              </div>
+
+
+              {/* ✅ REAL HGT CONNECTIONS */}
+              <div className="border rounded-2xl">
+                <div className="p-4 border-b font-bold flex gap-2">
+                  <Link2 size={16} /> Recent Connections
+                </div>
+
+                {recentConnections.length === 0 ? (
+                  <div className="p-4 text-sm text-muted-foreground text-center">
+                    No recent activity yet
+                  </div>
+                ) : (
+                  recentConnections.map((u: any, i: number) => (
+                    <div key={i}
+                      className="flex items-center gap-3 p-3 cursor-pointer"
+                      onClick={() => navigate(`/user/${u.username}`)}>
+
+                      <Avatar url={u.avatar_url} title={u.username} size={32} />
+
+                      <div className="flex-1">
+                        <div className="text-sm font-bold">@{u.username}</div>
+                        <div className="text-xs text-muted-foreground">
+                          Linked {u.connection}
+                        </div>
                       </div>
                     </div>
-                  ))}
-                </div>
+                  ))
+                )}
               </div>
+
             </div>
 
           </div>
