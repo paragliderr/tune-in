@@ -125,6 +125,15 @@ export default function UserProfile() {
   const [githubToken, setGithubToken] = useState('');
   const [linkingGithub, setLinkingGithub] = useState(false);
 
+  // Spotify Setup Modal state
+  const [isLinkingSpotify, setIsLinkingSpotify] = useState(false);
+  const [spotifyConfig, setSpotifyConfig] = useState({
+    client_id: '',
+    client_secret: '',
+    refresh_token: '',
+  });
+  const [linkingSpotify, setLinkingSpotify] = useState(false);
+
   // Letterboxd Setup Modal state
   const [isLinkingLetterboxd, setIsLinkingLetterboxd] = useState(false);
   const [letterboxdInput, setLetterboxdInput] = useState('');
@@ -429,6 +438,75 @@ export default function UserProfile() {
       toast.error('Failed to sync Letterboxd feed');
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleSpotifySync = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("No session found");
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/connect/spotify/sync`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) throw new Error("Spotify Sync failed");
+      toast.success("Spotify metrics updated!");
+
+      const { data: updatedProfile } = await supabase.from('profiles').select('*').eq('id', profile?.id).single();
+      if (updatedProfile) {
+        setProfile(updatedProfile);
+        setEditConnections(updatedProfile.connections || {});
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to sync Spotify");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleConnectSpotify = async () => {
+    setLinkingSpotify(true);
+    try {
+      if (!spotifyConfig.client_id || !spotifyConfig.client_secret || !spotifyConfig.refresh_token) {
+        throw new Error("Please fill in Client ID, Secret, and Refresh Token");
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("No session found");
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/connect/spotify`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(spotifyConfig)
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.detail || "Failed to link Spotify");
+      }
+
+      toast.success("Spotify connected! Syncing stats...");
+      setIsLinkingSpotify(false);
+
+      const { data: updatedProfile } = await supabase.from('profiles').select('*').eq('id', profile?.id).single();
+      if (updatedProfile) {
+        setProfile(updatedProfile);
+        setEditConnections(updatedProfile.connections || {});
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Spotify Connection Failed");
+    } finally {
+      setLinkingSpotify(false);
     }
   };
 
@@ -742,6 +820,19 @@ export default function UserProfile() {
                             {isLinked ? "Update Connection" : "Connect Strava API"}
                           </button>
                         </div>
+                      ) : key === 'spotify' ? (
+                        <div className="px-1">
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setSpotifyConfig({ client_id: '', client_secret: '', refresh_token: '' });
+                              setIsLinkingSpotify(true);
+                            }}
+                            className="w-full bg-[#1db954]/10 text-[#1db954] border border-[#1db954]/20 rounded-lg py-2 text-xs font-bold hover:bg-[#1db954]/20 transition-all uppercase tracking-tight"
+                          >
+                            {isLinked ? "Update Connection" : "Connect Spotify API"}
+                          </button>
+                        </div>
                       ) : (
                         <input
                           placeholder={meta.placeholder}
@@ -835,12 +926,16 @@ export default function UserProfile() {
                         {isLinked ? (
                           key === 'github' ? (
                             url === "linked" ? "Syncing..." : (url.startsWith('ghp_') ? "Connected" : `@${url}`)
-                          ) : (key === 'strava' ? `Athlete: ${url}` : (url.includes('.') ? "Connected" : `@${url}`))
+                            ) : key === 'strava' ? (
+                              `Athlete: ${url}`
+                            ) : key === 'spotify' ? (
+                              "Connected"
+                            ) : (url.includes('.') ? "Connected" : `@${url}`)
                         ) : "Not linked"}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      {(isOwnProfile || !!currentUserId) && (key === 'github' || key === 'strava' || key === 'letterboxd') && !isLinked && (
+                      {(isOwnProfile || !!currentUserId) && (key === 'github' || key === 'strava' || key === 'letterboxd' || key === 'spotify') && !isLinked && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -852,6 +947,9 @@ export default function UserProfile() {
                             } else if (key === 'letterboxd') {
                               setLetterboxdInput('');
                               setIsLinkingLetterboxd(true);
+                            } else if (key === 'spotify') {
+                              setSpotifyConfig({ client_id: '', client_secret: '', refresh_token: '' });
+                              setIsLinkingSpotify(true);
                             }
                           }}
                           className="px-4 py-1.5 text-[10px] bg-primary/10 text-primary border border-primary/20 rounded-md hover:bg-primary/20 transition-all font-bold uppercase tracking-tighter shadow-sm"
@@ -885,6 +983,22 @@ export default function UserProfile() {
                           disabled={syncing}
                           className="flex items-center gap-1 px-3 py-1.5 hover:bg-[#00e054]/10 rounded-lg text-[#00e054] transition-all border border-[#00e054]/20 bg-[#00e054]/5 disabled:opacity-50"
                           title="Verify Letterboxd Connection"
+                        >
+                          {syncing ? <Loader2 size={12} className="animate-spin" /> : <TrendingUp size={12} />}
+                          <span className="text-[10px] font-bold uppercase tracking-tight">
+                            {syncing ? "SYNCING..." : "Sync"}
+                          </span>
+                        </button>
+                      )}
+                      {(isOwnProfile || !!currentUserId) && key === 'spotify' && isLinked && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSpotifySync();
+                          }}
+                          disabled={syncing}
+                          className="flex items-center gap-1 px-3 py-1.5 hover:bg-[#1db954]/10 rounded-lg text-[#1db954] transition-all border border-[#1db954]/20 bg-[#1db954]/5 disabled:opacity-50"
+                          title="Sync Spotify Metrics"
                         >
                           {syncing ? <Loader2 size={12} className="animate-spin" /> : <TrendingUp size={12} />}
                           <span className="text-[10px] font-bold uppercase tracking-tight">
@@ -1273,6 +1387,87 @@ export default function UserProfile() {
               >
                 {linkingLetterboxd ? <Loader2 className="w-4 h-4 animate-spin" /> : <Film className="w-4 h-4" />}
                 {linkingLetterboxd ? 'Connecting...' : 'SAVE & CONNECT'}
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Spotify Setup Modal */}
+      <AnimatePresence>
+        {isLinkingSpotify && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsLinkingSpotify(false)}
+              className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl p-6 space-y-5"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#1db954]/10 flex items-center justify-center text-[#1db954] border border-[#1db954]/20">
+                    <Music size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold">Connect Spotify</h3>
+                    <p className="text-xs text-muted-foreground">Enter your Spotify API credentials</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsLinkingSpotify(false)}
+                  className="p-2 hover:bg-muted rounded-full transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider ml-1">Client ID</label>
+                <input
+                  type="text"
+                  placeholder="Your Spotify Client ID"
+                  value={spotifyConfig.client_id}
+                  onChange={(e) => setSpotifyConfig({ ...spotifyConfig, client_id: e.target.value })}
+                  className="w-full bg-muted/30 border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#1db954]/50 transition-colors"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider ml-1">Client Secret</label>
+                <input
+                  type="password"
+                  placeholder="••••••••"
+                  value={spotifyConfig.client_secret}
+                  onChange={(e) => setSpotifyConfig({ ...spotifyConfig, client_secret: e.target.value })}
+                  className="w-full bg-muted/30 border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#1db954]/50 transition-colors"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider ml-1">Refresh Token</label>
+                <input
+                  type="password"
+                  placeholder="Your long-lived Refresh Token"
+                  value={spotifyConfig.refresh_token}
+                  onChange={(e) => setSpotifyConfig({ ...spotifyConfig, refresh_token: e.target.value })}
+                  className="w-full bg-muted/30 border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#1db954]/50 transition-colors"
+                />
+              </div>
+
+              <button
+                onClick={handleConnectSpotify}
+                disabled={linkingSpotify}
+                className="w-full bg-[#1db954] text-black font-bold py-3 rounded-xl hover:opacity-90 transition-all shadow-lg shadow-[#1db954]/20 flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {linkingSpotify ? <Loader2 className="w-4 h-4 animate-spin" /> : <Music className="w-4 h-4" />}
+                {linkingSpotify ? 'Connecting...' : 'SAVE & SYNC STATS'}
               </button>
             </motion.div>
           </div>
