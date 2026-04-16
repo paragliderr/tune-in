@@ -70,7 +70,7 @@ export async function fetchTrendingFeed(
   feed: Record<string, unknown>[];
   message?: string;
 }> {
-  const res = await fetch(apiUrl(`/v1/feed/${userId}`), {
+  const res = await fetch(apiUrl(`/feed/${userId}`), {
     method: "GET",
     headers: { "Content-Type": "application/json" },
   });

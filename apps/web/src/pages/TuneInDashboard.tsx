@@ -104,7 +104,8 @@ export default function TuneInDashboard() {
 
         // 🔥 LEADERBOARD
         const res = await fetch("/api/tune-in/leaderboard");
-        const data = await res.json();
+const json = await res.json();
+const data = Array.isArray(json) ? json : (json?.items ?? json?.leaderboard ?? []);
 
         const { data: profiles } = await supabase
           .from("profiles")
