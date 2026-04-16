@@ -66,7 +66,6 @@ class TuneInHGT(torch.nn.Module):
                 out_channels=hidden_channels,
                 metadata=metadata,          # tells HGT about all node/edge types
                 heads=num_heads,
-                group="mean",               # aggregate multi-head outputs by mean
             )
             for _ in range(num_layers)
         ])

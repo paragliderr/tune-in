@@ -27,21 +27,28 @@ except Exception as e:
     print("[WARN] Falling back to lazy scoring:", e)
 
 
+from typing import Optional
+from fastapi import APIRouter, HTTPException, Request
+
 # =========================
 # DASHBOARD
 # =========================
-@router.get("/tune-in/dashboard/{user_id}")
-async def dashboard(user_id: str):
+@router.get("/tune-in/dashboard/{user_id}")  # path param: /api/tune-in/dashboard/UUID
+@router.get("/tune-in/dashboard")            # query param: /api/tune-in/dashboard?user_id=UUID
+async def dashboard(user_id: Optional[str] = None, request: Request = None):
+    # resolve from path param if present
+    uid = request.path_params.get("user_id") if request else None
+    uid = uid or user_id  # fall back to query param
+
+    if not uid:
+        raise HTTPException(status_code=400, detail="user_id is required")
+
     try:
-        # ✅ NEW FAST PATH
         if hgt_scorer:
-            return await hgt_scorer.get_user_dashboard(user_uuid=user_id)
+            return await hgt_scorer.get_user_dashboard(user_uuid=uid)
 
-        # ✅ OLD FALLBACK (lazy import)
         from ai_engine.scoring_service import compute_user_score
-
-        score = await compute_user_score(user_id)
-
+        score = await compute_user_score(uid)
         return {
             "total_score": score,
             "api_connections": [],
@@ -51,7 +58,6 @@ async def dashboard(user_id: str):
 
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-
     except Exception as e:
         print("Dashboard error:", e)
         return {
