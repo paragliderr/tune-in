@@ -11,10 +11,13 @@ interface LeaderboardEntry {
   username: string;
   avatar_url: string | null;
   score: number;
+  hgt_signal?: number; // Added for backend data
   breakdown: {
     movies?: number;
     games?: number;
     posts?: number;
+    likes?: number; // Added for backend data
+    clubs?: number; // Added for backend data
   };
 }
 
@@ -34,113 +37,47 @@ type CategoryKey = typeof CATEGORIES[number]["key"];
 
 // ─── Score fetchers ────────────────────────────────────────────────────────
 
+// ✅ NEW LOGIC: Fetches dynamic HGT & API scores directly from FastAPI
 async function fetchOverallLeaderboard(): Promise<LeaderboardEntry[]> {
+  try {
+    // 1. Fetch the mathematical ranks from the backend
+    // Replace with your actual deployed backend URL if not local
+    const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+    const res = await fetch(`${API_URL}/api/tune-in/leaderboard?top_k=50`);
+    
+    if (!res.ok) throw new Error("Failed to fetch from backend AI engine");
+    const backendData = await res.json();
 
-  // ❌ OLD LOGIC (COMMENTED OUT — DO NOT DELETE)
-  /*
-  const [{ data: profiles }, { data: posts }, { data: movieReviews }, { data: gameReviews }] = await Promise.all([
-    supabase.from("profiles").select("id, username, avatar_url"),
-    supabase.from("posts").select("user_id"),
-    supabase.from("movie_reviews").select("user_id"),
-    supabase.from("game_reviews").select("user_id"),
-  ]);
+    if (!backendData || backendData.length === 0) return [];
 
-  const postCount: Record<string, number> = {};
-  const movieCount: Record<string, number> = {};
-  const gameCount: Record<string, number> = {};
+    // 2. Fetch profiles from Supabase to attach usernames and avatars
+    const userIds = backendData.map((b: any) => b.user_id);
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id, username, avatar_url")
+      .in("id", userIds);
 
-  posts?.forEach((p) => {
-    postCount[p.user_id] = (postCount[p.user_id] ?? 0) + 1;
-  });
+    const profileMap = new Map(profiles?.map((p) => [p.id, p]));
 
-  movieReviews?.forEach((m) => {
-    movieCount[m.user_id] = (movieCount[m.user_id] ?? 0) + 1;
-  });
-
-  gameReviews?.forEach((g) => {
-    gameCount[g.user_id] = (gameCount[g.user_id] ?? 0) + 1;
-  });
-
-  return (profiles ?? [])
-    .map((p) => {
-      const postsScore = postCount[p.id] ?? 0;
-      const moviesScore = movieCount[p.id] ?? 0;
-      const gamesScore = gameCount[p.id] ?? 0;
-
-      const totalScore =
-        postsScore * 1 +
-        moviesScore * 3 +
-        gamesScore * 3;
-
+    // 3. Merge backend math with frontend UI data
+    return backendData.map((b: any) => {
+      const profile = profileMap.get(b.user_id);
       return {
-        user_id: p.id,
-        username: p.username || "User",
-        avatar_url: p.avatar_url,
-        score: totalScore,
+        user_id: b.user_id,
+        username: profile?.username || "User",
+        avatar_url: profile?.avatar_url || null,
+        score: b.total_score,
+        hgt_signal: b.hgt_signal,
         breakdown: {
-          posts: postsScore,
-          movies: moviesScore,
-          games: gamesScore,
+          likes: b.likes_count,
+          clubs: b.clubs_count,
         },
       };
-    })
-    .filter((e) => e.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 50);
-  */
-
-  // ✅ NEW HGT LOGIC (ENGAGEMENT-BASED SCORING)
-
-  const [{ data: profiles }, { data: posts }, { data: movieReviews }, { data: gameReviews }] = await Promise.all([
-    supabase.from("profiles").select("id, username, avatar_url"),
-    supabase.from("posts").select("user_id, like_count, comment_count"),
-    supabase.from("movie_reviews").select("user_id"),
-    supabase.from("game_reviews").select("user_id"),
-  ]);
-
-  const scoreMap: Record<string, number> = {};
-  const breakdownMap: Record<string, { posts: number; movies: number; games: number }> = {};
-
-  // Initialize users
-  profiles?.forEach((p) => {
-    scoreMap[p.id] = 0;
-    breakdownMap[p.id] = { posts: 0, movies: 0, games: 0 };
-  });
-
-  // Posts (HGT logic)
-  posts?.forEach((p) => {
-    const base = 5;
-    const engagement =
-      (p.like_count ?? 0) * 2 +
-      (p.comment_count ?? 0) * 3;
-
-    scoreMap[p.user_id] += base + engagement;
-    breakdownMap[p.user_id].posts += 1;
-  });
-
-  // Movie reviews
-  movieReviews?.forEach((m) => {
-    scoreMap[m.user_id] += 10;
-    breakdownMap[m.user_id].movies += 1;
-  });
-
-  // Game reviews
-  gameReviews?.forEach((g) => {
-    scoreMap[g.user_id] += 10;
-    breakdownMap[g.user_id].games += 1;
-  });
-
-  return (profiles ?? [])
-    .map((p) => ({
-      user_id: p.id,
-      username: p.username || "User",
-      avatar_url: p.avatar_url,
-      score: scoreMap[p.id] ?? 0,
-      breakdown: breakdownMap[p.id],
-    }))
-    .filter((e) => e.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 50);
+    });
+  } catch (error) {
+    console.error("Overall Leaderboard fetch failed:", error);
+    return [];
+  }
 }
 
 async function fetchCinemaLeaderboard(): Promise<LeaderboardEntry[]> {
@@ -155,7 +92,7 @@ async function fetchCinemaLeaderboard(): Promise<LeaderboardEntry[]> {
   return (profiles ?? [])
     .map((p) => ({ 
       user_id: p.id, 
-      username: p.username || "User", // Safe fallback
+      username: p.username || "User",
       avatar_url: p.avatar_url, 
       score: scoreMap[p.id] ?? 0, 
       breakdown: { movies: scoreMap[p.id] ?? 0 } 
@@ -177,7 +114,7 @@ async function fetchGamesLeaderboard(): Promise<LeaderboardEntry[]> {
   return (profiles ?? [])
     .map((p) => ({ 
       user_id: p.id, 
-      username: p.username || "User", // Safe fallback
+      username: p.username || "User",
       avatar_url: p.avatar_url, 
       score: scoreMap[p.id] ?? 0, 
       breakdown: { games: scoreMap[p.id] ?? 0 } 
@@ -209,7 +146,7 @@ async function fetchClubLeaderboard(clubSlug: string): Promise<LeaderboardEntry[
   return (profiles ?? [])
     .map((p) => ({ 
       user_id: p.id, 
-      username: p.username || "User", // Safe fallback
+      username: p.username || "User",
       avatar_url: p.avatar_url, 
       score: postScore[p.id] ?? 0, 
       breakdown: { posts: postScore[p.id] ?? 0 } 
@@ -221,7 +158,7 @@ async function fetchClubLeaderboard(clubSlug: string): Promise<LeaderboardEntry[
 // ─── Avatar ────────────────────────────────────────────────────────────────
 
 const Avatar = ({ url, username, size = 36 }: { url: string | null; username: string | null; size?: number }) => {
-  const safeName = username || "??"; // Prevents crash if null
+  const safeName = username || "??"; 
   const initials = safeName.slice(0, 2).toUpperCase();
   
   return url ? (
@@ -278,7 +215,8 @@ const Leaderboard = () => {
       if (category === "overall") data = await fetchOverallLeaderboard();
       else if (category === "cinema") data = await fetchCinemaLeaderboard();
       else if (category === "games") data = await fetchGamesLeaderboard();
-      else data = await fetchClubLeaderboard(category); // tech, music, fitness, social map to club slugs
+      else data = await fetchClubLeaderboard(category); 
+      
       setEntries(data);
       if (currentUserId) {
         const idx = data.findIndex((e) => e.user_id === currentUserId);
@@ -291,7 +229,6 @@ const Leaderboard = () => {
 
   const maxScore = entries[0]?.score ?? 1;
   const topThree = entries.slice(0, 3);
-  const rest = entries.slice(3);
 
   const catMeta = CATEGORIES.find((c) => c.key === category)!;
 
@@ -361,11 +298,8 @@ const Leaderboard = () => {
                       {catMeta.label} Top 3
                     </p>
                     <div className="flex items-end justify-center gap-4">
-                      {/* 2nd */}
                       <PodiumCard entry={topThree[1]} rank={2} height="h-24" navigate={navigate} />
-                      {/* 1st */}
                       <PodiumCard entry={topThree[0]} rank={1} height="h-32" navigate={navigate} highlight />
-                      {/* 3rd */}
                       <PodiumCard entry={topThree[2]} rank={3} height="h-20" navigate={navigate} />
                     </div>
                   </div>
@@ -375,7 +309,7 @@ const Leaderboard = () => {
                 <div className="rounded-2xl border border-border bg-card divide-y divide-border overflow-hidden">
                   {entries.map((entry, idx) => {
                     const isMe = entry.user_id === currentUserId;
-                    const safeName = entry.username || "User"; // Safe fallback
+                    const safeName = entry.username || "User";
                     return (
                       <motion.div
                         key={entry.user_id}
@@ -402,7 +336,7 @@ const Leaderboard = () => {
                               </span>
                             )}
                           </div>
-                          <BreakdownLine breakdown={entry.breakdown} category={category} />
+                          <BreakdownLine entry={entry} category={category} />
                         </div>
                         <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                           <span className="text-sm font-semibold tabular-nums">{entry.score.toLocaleString()}</span>
@@ -427,19 +361,11 @@ const Leaderboard = () => {
 // ─── Podium card ───────────────────────────────────────────────────────────
 
 const PodiumCard = ({
-  entry,
-  rank,
-  height,
-  navigate,
-  highlight = false,
+  entry, rank, height, navigate, highlight = false,
 }: {
-  entry: LeaderboardEntry;
-  rank: number;
-  height: string;
-  navigate: ReturnType<typeof useNavigate>;
-  highlight?: boolean;
+  entry: LeaderboardEntry; rank: number; height: string; navigate: ReturnType<typeof useNavigate>; highlight?: boolean;
 }) => {
-  const safeName = entry.username || "User"; // Prevents crash
+  const safeName = entry.username || "User"; 
   return (
     <div
       className="flex flex-col items-center gap-2 cursor-pointer"
@@ -471,11 +397,20 @@ const PodiumCard = ({
 
 // ─── Breakdown line ────────────────────────────────────────────────────────
 
-const BreakdownLine = ({ breakdown, category }: { breakdown: LeaderboardEntry["breakdown"]; category: CategoryKey }) => {
+const BreakdownLine = ({ entry, category }: { entry: LeaderboardEntry; category: CategoryKey }) => {
+  const { breakdown, hgt_signal } = entry;
   const parts: string[] = [];
-  if (breakdown.movies)    parts.push(`${breakdown.movies} films`);
-  if (breakdown.games)     parts.push(`${breakdown.games} games`);
-  if (breakdown.posts)     parts.push(`${breakdown.posts} posts`);
+  
+  if (category === "overall") {
+    if (hgt_signal !== undefined) parts.push(`HGT: ${hgt_signal.toFixed(2)}`);
+    if (breakdown.likes)          parts.push(`${breakdown.likes} likes`);
+    if (breakdown.clubs)          parts.push(`${breakdown.clubs} clubs`);
+  } else {
+    if (breakdown.movies) parts.push(`${breakdown.movies} films`);
+    if (breakdown.games)  parts.push(`${breakdown.games} games`);
+    if (breakdown.posts)  parts.push(`${breakdown.posts} posts`);
+  }
+
   return (
     <p className="text-xs text-muted-foreground truncate mt-0.5">
       {parts.join(" · ") || "No activity"}
@@ -487,7 +422,7 @@ const BreakdownLine = ({ breakdown, category }: { breakdown: LeaderboardEntry["b
 
 const ScoringNote = ({ category }: { category: CategoryKey }) => {
   const notes: Record<CategoryKey, string> = {
-    overall:  "Score = movies ×3 + games ×3 + posts ×1",
+    overall:  "AI Blended Score = (Likes × 20) + (Clubs × 15) + (HGT Signal × 100) + API Connections",
     cinema:   "Score = total movies logged via Letterboxd / reviews",
     games:    "Score = total games reviewed",
     music:    "Score = posts + engagement in Music club",
