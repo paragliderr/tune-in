@@ -9,6 +9,7 @@ class StravaService:
         self.refresh_token = refresh_token
         self.access_token = None
         self.expires_at = None
+        self._cached_headers = None
 
     def _get_access_token(self):
         """Exchange a refresh token for a short-lived access token."""
@@ -28,9 +29,32 @@ class StravaService:
         self.expires_at = token_data["expires_at"] # Epoch time
         return self.access_token
 
+    def exchange_code(self, code):
+        """Exchange initial authorization code for tokens."""
+        print(f"[STRAVA_SERVICE] Exchanging authorization code...")
+        response = requests.post(
+            "https://www.strava.com/oauth/token",
+            data={
+                "client_id":     self.client_id,
+                "client_secret": self.client_secret,
+                "grant_type":    "authorization_code",
+                "code":          code,
+            },
+        )
+        response.raise_for_status()
+        token_data = response.json()
+        self.access_token = token_data["access_token"]
+        self.refresh_token = token_data["refresh_token"]
+        self.expires_at = token_data["expires_at"]
+        return token_data
+
     def _headers(self):
+        if self._cached_headers:
+            return self._cached_headers
+            
         token = self._get_access_token()
-        return {"Authorization": f"Bearer {token}"}
+        self._cached_headers = {"Authorization": f"Bearer {token}"}
+        return self._cached_headers
 
     def _get_username(self):
         """Get athlete profile."""

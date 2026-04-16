@@ -148,7 +148,8 @@ async def connect_strava(req: StravaConnectRequest, background_tasks: Background
         # If code is provided, perform initial exchange
         if req.code:
             print(f"[SYNC] Exchanging initial code for @{user_id}")
-            token_data = strava.exchange_code(req.code)
+            strava.code = req.code  # set it on the instance
+            token_data = strava.exchange_code()  # now it will use the instance code
             current_refresh_token = token_data["refresh_token"]
             current_access_token = token_data["access_token"]
             current_expires_at = datetime.fromtimestamp(token_data["expires_at"], tz=timezone.utc).isoformat()
