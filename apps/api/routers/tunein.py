@@ -1,39 +1,79 @@
-from fastapi import APIRouter
-import sys
 import os
+import sys
+from fastapi import APIRouter, HTTPException
 
+# Keep path setup
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
 sys.path.append(os.path.join(BASE_DIR, "services"))
 
 router = APIRouter()
 
+# =========================
+# OPTIONAL OPTIMIZED SERVICE (NEW LOGIC)
+# =========================
+hgt_scorer = None
 
-@router.get("/tune-in/dashboard")
+try:
+    from ai_engine.scoring_service import ScoringService
+
+    hgt_scorer = ScoringService(
+        neo4j_uri=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+        neo4j_user=os.getenv("NEO4J_USER", "neo4j"),
+        neo4j_password=os.getenv("NEO4J_PASSWORD", "password")
+    )
+    print("[OK] HGT ScoringService initialized")
+
+except Exception as e:
+    print("[WARN] Falling back to lazy scoring:", e)
+
+
+# =========================
+# DASHBOARD
+# =========================
+@router.get("/tune-in/dashboard/{user_id}")
 async def dashboard(user_id: str):
-    # FIX: lazy import — only pulled in when this route is actually called,
-    # so a missing torch_geometric won't crash the server on startup.
     try:
+        # ✅ NEW FAST PATH
+        if hgt_scorer:
+            return await hgt_scorer.get_user_dashboard(user_uuid=user_id)
+
+        # ✅ OLD FALLBACK (lazy import)
         from ai_engine.scoring_service import compute_user_score
+
         score = await compute_user_score(user_id)
+
         return {
             "total_score": score,
             "api_connections": [],
             "rank": 0,
+            "recommendations": []
         }
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
     except Exception as e:
         print("Dashboard error:", e)
         return {
             "total_score": 0,
             "api_connections": [],
             "rank": 0,
+            "recommendations": []
         }
 
 
+# =========================
+# LEADERBOARD
+# =========================
 @router.get("/tune-in/leaderboard")
 async def leaderboard():
-    # FIX: lazy import for the same reason — Neo4jGraphBuilder pulls in
-    # torch_geometric transitively through scoring_service/graph_builder.
     try:
+        # ✅ NEW FAST PATH
+        if hgt_scorer:
+            leaderboard_data = await hgt_scorer.get_leaderboard(top_k=20)
+            return {"leaderboard": leaderboard_data}
+
+        # ✅ OLD FALLBACK (lazy graph build)
         from ai_engine.graph_builder import Neo4jGraphBuilder
         from ai_engine.scoring_service import compute_user_score
 
@@ -42,21 +82,17 @@ async def leaderboard():
             user=os.getenv("NEO4J_USER"),
             password=os.getenv("NEO4J_PASSWORD"),
         )
-        await builder.connect()
 
+        await builder.connect()
         result = await builder.build()
 
-        # Handle both (graph, builder) tuple and plain graph returns
         if isinstance(result, tuple):
             graph_obj, builder = result
         else:
             graph_obj = result
 
-        print("USER MAP:", getattr(builder, "user_id_map", None))
-
         if not hasattr(builder, "user_id_map"):
-            print("Builder missing user_id_map ❌")
-            return []
+            return {"leaderboard": []}
 
         results = []
         for neo4j_id, idx in builder.user_id_map.items():
@@ -66,15 +102,17 @@ async def leaderboard():
                     if hasattr(builder, "user_supabase_map")
                     else neo4j_id
                 )
+
                 score = await compute_user_score(supabase_id)
                 results.append({"user_id": supabase_id, "score": score})
+
             except Exception as e:
                 print(f"Error scoring {neo4j_id}:", e)
                 continue
 
         results.sort(key=lambda x: x["score"], reverse=True)
-        return results[:50]
+        return {"leaderboard": results[:50]}
 
     except Exception as e:
         print("Leaderboard error:", e)
-        return []
+        return {"leaderboard": []}
