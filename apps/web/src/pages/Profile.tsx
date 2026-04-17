@@ -139,6 +139,14 @@ export default function UserProfile() {
   const [letterboxdInput, setLetterboxdInput] = useState('');
   const [linkingLetterboxd, setLinkingLetterboxd] = useState(false);
 
+  // ── Steam Setup Modal state ────────────────────────────────────────────────
+  const [isLinkingSteam, setIsLinkingSteam] = useState(false);
+  const [steamConfig, setSteamConfig] = useState({
+    api_key: '',
+    steam_id: '',
+  });
+  const [linkingSteam, setLinkingSteam] = useState(false);
+
   // Social Stats State
   const [postCount, setPostCount] = useState(0);
   const [userRank, setUserRank] = useState<number | null>(null);
@@ -296,7 +304,6 @@ export default function UserProfile() {
                   is_letterboxd: true,
                   letterboxd_url: r.letterboxd_url,
                 }));
-                // Filter out local Tune-In reviews for the same movie to avoid duplicates
                 const tuneInMovieIds = new Set(combinedData.map(r => r.movie_id));
                 const uniqueLb = lbMapped.filter(r => !tuneInMovieIds.has(r.movie_id));
                 combinedData = [...combinedData, ...uniqueLb];
@@ -471,6 +478,77 @@ export default function UserProfile() {
     }
   };
 
+  // ── Action: Handle Steam Sync ──────────────────────────────────────────────
+  const handleSteamSync = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("No session found");
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/connect/steam/sync`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) throw new Error("Steam Sync failed");
+      toast.success("Steam library synced!");
+
+      const { data: updatedProfile } = await supabase.from('profiles').select('*').eq('id', profile?.id).single();
+      if (updatedProfile) {
+        setProfile(updatedProfile);
+        setEditConnections(updatedProfile.connections || {});
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to sync Steam");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // ── Action: Handle Steam Connect ───────────────────────────────────────────
+  const handleConnectSteam = async () => {
+    setLinkingSteam(true);
+    try {
+      if (!steamConfig.api_key || !steamConfig.steam_id) {
+        throw new Error("Please fill in both API Key and Steam ID");
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("No session found");
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/connect/steam`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(steamConfig)
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.detail || "Failed to link Steam");
+      }
+
+      toast.success("Steam connected! Syncing library...");
+      setIsLinkingSteam(false);
+
+      const { data: updatedProfile } = await supabase.from('profiles').select('*').eq('id', profile?.id).single();
+      if (updatedProfile) {
+        setProfile(updatedProfile);
+        setEditConnections(updatedProfile.connections || {});
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Steam Connection Failed");
+    } finally {
+      setLinkingSteam(false);
+    }
+  };
+
   const handleConnectSpotify = async () => {
     setLinkingSpotify(true);
     try {
@@ -551,9 +629,7 @@ export default function UserProfile() {
   const handleSaveConnections = async () => {
     setSavingConnections(true);
     try {
-      // 🛡️ Security: Masking disabled as requested for debugging
       const filteredConnections = { ...editConnections };
-      // [CENSOR LOGIC REMOVED]
 
       const { error } = await supabase
         .from('profiles')
@@ -562,7 +638,7 @@ export default function UserProfile() {
 
       if (error) throw error;
 
-      // 🔥 If GitHub was updated/added, trigger the backend connect
+      // If GitHub was updated/added, trigger the backend connect
       if (editConnections.github && editConnections.github !== (profile.connections?.github)) {
         try {
           const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/connect/github`, {
@@ -624,6 +700,10 @@ export default function UserProfile() {
     }
   };
 
+  // ── Helper: Navigate to messages ───────────────────────────────────────────
+  const navigateToMessages = (targetUsername: string) => {
+    window.location.href = `http://localhost:8080/messages/${targetUsername}`;
+  };
 
   if (loading) {
     return (
@@ -651,10 +731,12 @@ export default function UserProfile() {
         </button>
         <span className="text-sm font-semibold truncate">@{profile.username}</span>
         <div className="ml-auto flex gap-2">
-          {!isOwnProfile && currentUserId && (
+          {/* Message button — always visible when logged in (for other profiles AND own profile) */}
+          {currentUserId && (
             <button
-              onClick={() => navigate(`/messages/${profile.username}`)}
+              onClick={() => navigateToMessages(profile.username)}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all"
+              title={`Message @${profile.username}`}
             >
               <MessageSquare size={14} />
               <span className="hidden sm:inline">Message</span>
@@ -833,6 +915,19 @@ export default function UserProfile() {
                             {isLinked ? "Update Connection" : "Connect Spotify API"}
                           </button>
                         </div>
+                      ) : key === 'steam' ? (
+                        <div className="px-1">
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setSteamConfig({ api_key: '', steam_id: '' });
+                              setIsLinkingSteam(true);
+                            }}
+                            className="w-full bg-[#66c0f4]/10 text-[#66c0f4] border border-[#66c0f4]/20 rounded-lg py-2 text-xs font-bold hover:bg-[#66c0f4]/20 transition-all uppercase tracking-tight"
+                          >
+                            {isLinked ? "Update Connection" : "Connect Steam API"}
+                          </button>
+                        </div>
                       ) : (
                         <input
                           placeholder={meta.placeholder}
@@ -863,6 +958,18 @@ export default function UserProfile() {
                             onClick={(e) => { e.preventDefault(); handleStravaSync(); }}
                             disabled={syncing}
                             className="text-[9px] font-bold text-primary hover:text-primary/80 disabled:opacity-50"
+                          >
+                            {syncing ? "SYNCING..." : "SYNC NOW"}
+                          </button>
+                        </div>
+                      )}
+
+                      {key === 'steam' && isLinked && (
+                        <div className="flex items-center justify-end mt-1 px-0.5">
+                          <button
+                            onClick={(e) => { e.preventDefault(); handleSteamSync(); }}
+                            disabled={syncing}
+                            className="text-[9px] font-bold text-[#66c0f4] hover:text-[#66c0f4]/80 disabled:opacity-50"
                           >
                             {syncing ? "SYNCING..." : "SYNC NOW"}
                           </button>
@@ -905,7 +1012,11 @@ export default function UserProfile() {
                     key={key}
                     onClick={() => {
                       if (isLinked) {
-                        const finalUrl = url.startsWith('http') ? url : (key === 'github' ? `https://github.com/${url}` : (key === 'strava' ? `https://strava.com/athletes/${url}` : `https://${url}`));
+                        let finalUrl = url;
+                        if (key === 'github') finalUrl = url.startsWith('http') ? url : `https://github.com/${url}`;
+                        else if (key === 'strava') finalUrl = `https://strava.com/athletes/${url}`;
+                        else if (key === 'steam') finalUrl = `https://steamcommunity.com/profiles/${url}`;
+                        else if (!url.startsWith('http')) finalUrl = `https://${url}`;
                         if (finalUrl.includes('.')) window.open(finalUrl, "_blank", "noopener,noreferrer");
                       }
                     }}
@@ -926,16 +1037,19 @@ export default function UserProfile() {
                         {isLinked ? (
                           key === 'github' ? (
                             url === "linked" ? "Syncing..." : (url.startsWith('ghp_') ? "Connected" : `@${url}`)
-                            ) : key === 'strava' ? (
-                              `Athlete: ${url}`
-                            ) : key === 'spotify' ? (
-                              "Connected"
-                            ) : (url.includes('.') ? "Connected" : `@${url}`)
+                          ) : key === 'strava' ? (
+                            `Athlete: ${url}`
+                          ) : key === 'steam' ? (
+                            `Steam ID: ${url}`
+                          ) : key === 'spotify' ? (
+                            "Connected"
+                          ) : (url.includes('.') ? "Connected" : `@${url}`)
                         ) : "Not linked"}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      {(isOwnProfile || !!currentUserId) && (key === 'github' || key === 'strava' || key === 'letterboxd' || key === 'spotify') && !isLinked && (
+                      {/* Setup buttons for unlinked special services */}
+                      {isOwnProfile && (key === 'github' || key === 'strava' || key === 'letterboxd' || key === 'spotify' || key === 'steam') && !isLinked && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -950,6 +1064,9 @@ export default function UserProfile() {
                             } else if (key === 'spotify') {
                               setSpotifyConfig({ client_id: '', client_secret: '', refresh_token: '' });
                               setIsLinkingSpotify(true);
+                            } else if (key === 'steam') {
+                              setSteamConfig({ api_key: '', steam_id: '' });
+                              setIsLinkingSteam(true);
                             }
                           }}
                           className="px-4 py-1.5 text-[10px] bg-primary/10 text-primary border border-primary/20 rounded-md hover:bg-primary/20 transition-all font-bold uppercase tracking-tighter shadow-sm"
@@ -958,12 +1075,10 @@ export default function UserProfile() {
                         </button>
                       )}
 
-                      {(isOwnProfile || !!currentUserId) && key === 'github' && isLinked && (
+                      {/* Sync buttons for linked services */}
+                      {isOwnProfile && key === 'github' && isLinked && (
                         <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            handleGitHubSync();
-                          }}
+                          onClick={async (e) => { e.stopPropagation(); handleGitHubSync(); }}
                           disabled={syncing}
                           className="flex items-center gap-1 px-3 py-1.5 hover:bg-primary/10 rounded-lg text-primary transition-all border border-primary/20 bg-primary/5 disabled:opacity-50"
                           title="Sync GitHub Stats"
@@ -974,12 +1089,9 @@ export default function UserProfile() {
                           </span>
                         </button>
                       )}
-                      {(isOwnProfile || !!currentUserId) && key === 'letterboxd' && isLinked && (
+                      {isOwnProfile && key === 'letterboxd' && isLinked && (
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleLetterboxdSync();
-                          }}
+                          onClick={(e) => { e.stopPropagation(); handleLetterboxdSync(); }}
                           disabled={syncing}
                           className="flex items-center gap-1 px-3 py-1.5 hover:bg-[#00e054]/10 rounded-lg text-[#00e054] transition-all border border-[#00e054]/20 bg-[#00e054]/5 disabled:opacity-50"
                           title="Verify Letterboxd Connection"
@@ -990,12 +1102,9 @@ export default function UserProfile() {
                           </span>
                         </button>
                       )}
-                      {(isOwnProfile || !!currentUserId) && key === 'spotify' && isLinked && (
+                      {isOwnProfile && key === 'spotify' && isLinked && (
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSpotifySync();
-                          }}
+                          onClick={(e) => { e.stopPropagation(); handleSpotifySync(); }}
                           disabled={syncing}
                           className="flex items-center gap-1 px-3 py-1.5 hover:bg-[#1db954]/10 rounded-lg text-[#1db954] transition-all border border-[#1db954]/20 bg-[#1db954]/5 disabled:opacity-50"
                           title="Sync Spotify Metrics"
@@ -1006,15 +1115,26 @@ export default function UserProfile() {
                           </span>
                         </button>
                       )}
-                      {(isOwnProfile || !!currentUserId) && key === 'strava' && isLinked && (
+                      {isOwnProfile && key === 'strava' && isLinked && (
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleStravaSync();
-                          }}
+                          onClick={(e) => { e.stopPropagation(); handleStravaSync(); }}
                           disabled={syncing}
                           className="flex items-center gap-1 px-3 py-1.5 hover:bg-orange-500/10 rounded-lg text-orange-500 transition-all border border-orange-500/20 bg-orange-500/5 disabled:opacity-50"
                           title="Sync Strava Metrics"
+                        >
+                          {syncing ? <Loader2 size={12} className="animate-spin" /> : <TrendingUp size={12} />}
+                          <span className="text-[10px] font-bold uppercase tracking-tight">
+                            {syncing ? "SYNCING..." : "Sync"}
+                          </span>
+                        </button>
+                      )}
+                      {/* ── Steam Sync button ── */}
+                      {isOwnProfile && key === 'steam' && isLinked && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleSteamSync(); }}
+                          disabled={syncing}
+                          className="flex items-center gap-1 px-3 py-1.5 hover:bg-[#66c0f4]/10 rounded-lg text-[#66c0f4] transition-all border border-[#66c0f4]/20 bg-[#66c0f4]/5 disabled:opacity-50"
+                          title="Sync Steam Library"
                         >
                           {syncing ? <Loader2 size={12} className="animate-spin" /> : <TrendingUp size={12} />}
                           <span className="text-[10px] font-bold uppercase tracking-tight">
@@ -1209,26 +1329,20 @@ export default function UserProfile() {
       <PostDetailDialog
         post={selectedPost}
         open={!!selectedPost && activeTab === "posts"}
-        onOpenChange={(o) => {
-          if (!o) setSelectedPost(null);
-        }}
+        onOpenChange={(o) => { if (!o) setSelectedPost(null); }}
       />
 
       <MovieDetailDialog
         movie={selectedMovie}
         open={!!selectedMovie && activeTab === "cinema"}
         letterboxdUsername={connections.letterboxd || undefined}
-        onOpenChange={(o) => {
-          if (!o) setSelectedMovie(null);
-        }}
+        onOpenChange={(o) => { if (!o) setSelectedMovie(null); }}
       />
 
       <GameDetailDialog
         gameId={selectedGameId}
         open={!!selectedGameId && activeTab === "games"}
-        onOpenChange={(o) => {
-          if (!o) setSelectedGameId(null);
-        }}
+        onOpenChange={(o) => { if (!o) setSelectedGameId(null); }}
       />
 
       {/* GitHub Setup Modal */}
@@ -1363,11 +1477,9 @@ export default function UserProfile() {
                   if (!letterboxdInput.trim()) { toast.error('Enter a username first'); return; }
                   setLinkingLetterboxd(true);
                   try {
-                    // Probe the feed to verify the username is valid
                     const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/api/connect/letterboxd/feed?username=${encodeURIComponent(letterboxdInput)}`);
                     if (!res.ok) throw new Error('Could not reach that Letterboxd profile');
                     const data = await res.json();
-                    // Persist username into profile.connections
                     const newConnections = { ...(profile?.connections || {}), letterboxd: letterboxdInput };
                     const { error } = await supabase.from('profiles').update({ connections: newConnections }).eq('id', profile?.id);
                     if (error) throw error;
@@ -1420,10 +1532,7 @@ export default function UserProfile() {
                     <p className="text-xs text-muted-foreground">Enter your Spotify API credentials</p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setIsLinkingSpotify(false)}
-                  className="p-2 hover:bg-muted rounded-full transition-colors"
-                >
+                <button onClick={() => setIsLinkingSpotify(false)} className="p-2 hover:bg-muted rounded-full transition-colors">
                   <X size={18} />
                 </button>
               </div>
@@ -1572,6 +1681,108 @@ export default function UserProfile() {
                     SAVE & SYNC ACTIVITIES
                   </>
                 )}
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Steam Setup Modal ─────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {isLinkingSteam && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsLinkingSteam(false)}
+              className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl p-6 space-y-5"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#66c0f4]/10 flex items-center justify-center text-[#66c0f4] border border-[#66c0f4]/20">
+                    <Gamepad2 size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold">Connect Steam</h3>
+                    <p className="text-xs text-muted-foreground">Enter your Steam API credentials</p>
+                  </div>
+                </div>
+                <button onClick={() => setIsLinkingSteam(false)} className="p-2 hover:bg-muted rounded-full transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider ml-1">Steam API Key</label>
+                <input
+                  type="password"
+                  placeholder="Your Steam Web API Key"
+                  value={steamConfig.api_key}
+                  onChange={(e) => setSteamConfig({ ...steamConfig, api_key: e.target.value })}
+                  className="w-full bg-muted/30 border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#66c0f4]/50 transition-colors font-mono"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider ml-1">Steam ID (64-bit)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 76561198012345678"
+                  value={steamConfig.steam_id}
+                  onChange={(e) => setSteamConfig({ ...steamConfig, steam_id: e.target.value.trim() })}
+                  className="w-full bg-muted/30 border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#66c0f4]/50 transition-colors font-mono"
+                />
+              </div>
+
+              <div className="bg-[#1b2838] rounded-xl p-3 border border-[#66c0f4]/20 space-y-1.5">
+                <p className="text-[10px] text-[#66c0f4]/80 leading-relaxed">
+                  🔑 Get your API key at{" "}
+                  <a
+                    href="https://steamcommunity.com/dev/apikey"
+                    target="_blank"
+                    className="text-[#66c0f4] hover:underline font-bold"
+                  >
+                    steamcommunity.com/dev/apikey
+                  </a>
+                </p>
+                <p className="text-[10px] text-[#66c0f4]/80 leading-relaxed">
+                  🆔 Find your Steam ID at{" "}
+                  <a
+                    href="https://steamid.io"
+                    target="_blank"
+                    className="text-[#66c0f4] hover:underline font-bold"
+                  >
+                    steamid.io
+                  </a>{" "}
+                  — make sure your profile is <span className="text-white font-semibold">public</span>.
+                </p>
+              </div>
+
+              <button
+                onClick={handleConnectSteam}
+                disabled={linkingSteam || !steamConfig.api_key.trim() || !steamConfig.steam_id.trim()}
+                className="w-full font-bold py-3 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 text-white"
+                style={{
+                  background: linkingSteam ? '#555' : 'linear-gradient(135deg, #1b2838 0%, #2a475e 100%)',
+                  border: '1px solid #66c0f4',
+                  boxShadow: '0 8px 24px #66c0f430'
+                }}
+              >
+                {linkingSteam ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Gamepad2 className="w-4 h-4 text-[#66c0f4]" />
+                )}
+                <span className={linkingSteam ? '' : 'text-[#66c0f4]'}>
+                  {linkingSteam ? 'Connecting...' : 'SAVE & SYNC LIBRARY'}
+                </span>
               </button>
             </motion.div>
           </div>
