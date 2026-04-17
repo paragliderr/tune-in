@@ -15,3 +15,7 @@ __pycache__/
 
 #Ml+MLops
 wandb/
+services/connect/spotify_test.py
+services/connect/.spotify_cache
+services/connect/spotify_test01.py
+services/connect/.cache
