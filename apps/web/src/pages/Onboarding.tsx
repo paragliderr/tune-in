@@ -6,6 +6,9 @@ import { Check, Upload, User, Cpu, Music, Gamepad2, Film } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 
+// 👇 The Default Avatar URL to use if the user skips uploading
+const DEFAULT_AVATAR_URL = "https://skgmoimraducfxfgtzie.supabase.co/storage/v1/object/public/avatars/DEFAULT-PROFILE.jpg";
+
 const HOBBIES = [
   { id: "tech", name: "Tech", icon: Cpu },
   { id: "music", name: "Music", icon: Music },
@@ -61,68 +64,68 @@ const Onboarding = () => {
     };
 
     check();
-  }, []);
+  }, [navigate]);
 
-const handleUsernameChange = (value: string) => {
-  const clean = value.toLowerCase().replace(/[^a-z0-9_]/g, "");
-  setUsername(clean);
-  setUsernameAvailable(null);
+  const handleUsernameChange = (value: string) => {
+    const clean = value.toLowerCase().replace(/[^a-z0-9_]/g, "");
+    setUsername(clean);
+    setUsernameAvailable(null);
 
-  if (clean.length > 0 && clean.length < 3) {
-    setUsernameError("Username must be at least 3 characters");
-    return;
-  }
-
-  if (clean.length > 20) {
-    setUsernameError("Username must be 20 characters or less");
-    return;
-  }
-
-  setUsernameError("");
-};
-
-useEffect(() => {
-  const t = setTimeout(() => {
-    setDebouncedUsername(username);
-  }, 500);
-
-  return () => clearTimeout(t);
-}, [username]);
-
-useEffect(() => {
-  let cancelled = false; // ⭐ VERY IMPORTANT
-
-  const check = async () => {
-    if (!debouncedUsername) return;
-    if (debouncedUsername.length < 3) return;
-
-    setCheckingUsername(true);
-
-    const { data } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("username", debouncedUsername)
-      .maybeSingle();
-
-    if (cancelled) return; // ⭐ ignore old response
-
-    if (data) {
-      setUsernameAvailable(false);
-      setUsernameError("This username already exists");
-    } else {
-      setUsernameAvailable(true);
-      setUsernameError("");
+    if (clean.length > 0 && clean.length < 3) {
+      setUsernameError("Username must be at least 3 characters");
+      return;
     }
 
-    setCheckingUsername(false);
+    if (clean.length > 20) {
+      setUsernameError("Username must be 20 characters or less");
+      return;
+    }
+
+    setUsernameError("");
   };
 
-  check();
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedUsername(username);
+    }, 500);
 
-  return () => {
-    cancelled = true; // ⭐ cancel previous API result
-  };
-}, [debouncedUsername]);
+    return () => clearTimeout(t);
+  }, [username]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const check = async () => {
+      if (!debouncedUsername) return;
+      if (debouncedUsername.length < 3) return;
+
+      setCheckingUsername(true);
+
+      const { data } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("username", debouncedUsername)
+        .maybeSingle();
+
+      if (cancelled) return; 
+
+      if (data) {
+        setUsernameAvailable(false);
+        setUsernameError("This username already exists");
+      } else {
+        setUsernameAvailable(true);
+        setUsernameError("");
+      }
+
+      setCheckingUsername(false);
+    };
+
+    check();
+
+    return () => {
+      cancelled = true; 
+    };
+  }, [debouncedUsername]);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -138,112 +141,108 @@ useEffect(() => {
     );
   };
 
-const handleFinish = async () => {
-  if (saving) return;
-  setSaving(true);
+  const handleFinish = async () => {
+    if (saving) return;
+    setSaving(true);
 
-  if (usernameAvailable !== true) {
-    setSaving(false);
-    toast.error("Please choose an available username");
-    return;
-  }
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    setSaving(false);
-    toast.error("Session expired. Please login again.");
-    navigate("/login");
-    return;
-  }
-
-  let avatarUrl: string | null = null;
-
-  // ⭐ upload avatar if selected
-  if (avatarFile) {
-    const filePath = `${user.id}/avatar.png`;
-
-    const { error: uploadError } = await supabase.storage
-      .from("avatars")
-      .upload(filePath, avatarFile, {
-        upsert: true,
-      });
-
-    if (uploadError) {
+    if (usernameAvailable !== true) {
       setSaving(false);
-      toast.error(uploadError.message);
+      toast.error("Please choose an available username");
       return;
     }
 
-    const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    avatarUrl = data.publicUrl;
-  }
-
-const updatePayload: any = {
-  username,
-  bio,
-  onboarding_completed: true,
-};
-
-if (avatarUrl) {
-  updatePayload.avatar_url = avatarUrl;
-}
-
-const { error: profileError } = await supabase
-  .from("profiles")
-  .upsert({
-    id: user.id,
-    ...updatePayload,
-  });
-
-if (profileError) {
-  setSaving(false);
-  toast.error(profileError.message);
-  return;
-}
-
-  /* ⭐ AUTO JOIN CLUBS */
-
-  const clubSlugs = selectedHobbies.map((hobby) => HOBBY_TO_CLUB_SLUG[hobby]);
-
-  const { data: clubs, error: clubFetchError } = await supabase
-    .from("clubs")
-    .select("id")
-    .in("slug", clubSlugs);
-
-  if (clubFetchError) {
-    setSaving(false);
-    toast.error(clubFetchError.message);
-    return;
-  }
-
-  if (clubs && clubs.length > 0) {
-    const inserts = clubs.map((club) => ({
-      club_id: club.id,
-      user_id: user.id,
-    }));
-
-    const { error: joinError } = await supabase
-      .from("club_members")
-      .upsert(inserts, {
-        onConflict: "club_id,user_id",
-      });
-
-    if (joinError) {
+    if (!user) {
       setSaving(false);
-      toast.error(joinError.message);
+      toast.error("Session expired. Please login again.");
+      navigate("/login");
       return;
     }
-  }
 
-  setSaving(false);
+    // ⭐ Set the default avatar URL immediately
+    let avatarUrl: string = DEFAULT_AVATAR_URL; 
 
-  navigate("/home", { replace: true });
-};;;;
+    // ⭐ Overwrite the default only if the user specifically uploaded an image
+    if (avatarFile) {
+      const filePath = `${user.id}/avatar.png`;
 
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(filePath, avatarFile, {
+          upsert: true,
+        });
+
+      if (uploadError) {
+        setSaving(false);
+        toast.error(uploadError.message);
+        return;
+      }
+
+      const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
+      avatarUrl = data.publicUrl;
+    }
+
+    // Prepare the update payload with the guaranteed avatar URL
+    const updatePayload: any = {
+      username,
+      bio,
+      avatar_url: avatarUrl, // ⭐ Apply Avatar (Either custom or default)
+      onboarding_completed: true,
+    };
+
+    const { error: profileError } = await supabase
+      .from("profiles")
+      .upsert({
+        id: user.id,
+        ...updatePayload,
+      });
+
+    if (profileError) {
+      setSaving(false);
+      toast.error(profileError.message);
+      return;
+    }
+
+    /* ⭐ AUTO JOIN CLUBS */
+    const clubSlugs = selectedHobbies.map((hobby) => HOBBY_TO_CLUB_SLUG[hobby]);
+
+    const { data: clubs, error: clubFetchError } = await supabase
+      .from("clubs")
+      .select("id")
+      .in("slug", clubSlugs);
+
+    if (clubFetchError) {
+      setSaving(false);
+      toast.error(clubFetchError.message);
+      return;
+    }
+
+    if (clubs && clubs.length > 0) {
+      const inserts = clubs.map((club) => ({
+        club_id: club.id,
+        user_id: user.id,
+      }));
+
+      const { error: joinError } = await supabase
+        .from("club_members")
+        .upsert(inserts, {
+          onConflict: "club_id,user_id",
+        });
+
+      if (joinError) {
+        setSaving(false);
+        toast.error(joinError.message);
+        return;
+      }
+    }
+
+    setSaving(false);
+
+    navigate("/home", { replace: true });
+  };
 
   const canProceed = () => {
     if (step === 0)
