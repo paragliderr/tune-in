@@ -497,3 +497,301 @@ class ScoringService:
             })
 
         return results
+
+
+
+
+
+
+"""
+TuneIn Scoring Service
+"""
+
+# import asyncio
+# import logging
+# import os
+# import time
+# from dataclasses import dataclass, field
+# from typing import Optional
+# from functools import partial
+
+# from supabase import create_client, Client as SupabaseClient
+
+# logger = logging.getLogger(__name__)
+
+# # ── Supabase singleton ────────────────────────────────────────────────────────
+# _supabase_client: SupabaseClient = None
+
+# def get_supabase() -> SupabaseClient:
+#     global _supabase_client
+#     if _supabase_client is None:
+#         _supabase_client = create_client(
+#             os.environ["SUPABASE_URL"],
+#             os.environ["SUPABASE_SERVICE_KEY"],
+#         )
+#     return _supabase_client
+
+# @dataclass
+# class HGTConfig:
+#     weight_likes:  float = 0.40
+#     weight_clubs:  float = 0.35
+#     weight_hgt:    float = 0.25
+
+# class ScoringService:
+#     def __init__(self, neo4j_uri="", neo4j_user="", neo4j_password="", config=None, cache_ttl=300):
+#         self._config         = config or HGTConfig()
+#         self._cache_ttl      = cache_ttl
+#         self.supabase        = get_supabase()
+#         self._scores_cache: dict  = {}
+#         self._scores_built_at: float = 0.0
+#         self._scores_ttl: int = 120
+
+#     def _discover_all_user_ids(self) -> set:
+#         sb = self.supabase
+#         sources = []
+#         try:
+#             r = sb.table("profiles").select("id").execute().data or []
+#             sources.extend(row["id"] for row in r if row.get("id"))
+#         except Exception as e:
+#             logger.warning(f"profiles fetch failed: {e}")
+
+#         for table in ["club_members", "post_reactions", "strava_stats",
+#                        "github_stats", "movie_reviews", "game_reviews"]:
+#             try:
+#                 r = sb.table(table).select("user_id").execute().data or []
+#                 sources.extend(row["user_id"] for row in r if row.get("user_id"))
+#             except Exception as e:
+#                 logger.warning(f"{table} user_id fetch failed: {e}")
+#         return set(sources)
+
+#     def get_all_user_scores(self) -> dict:
+#         if self._scores_cache and (time.time() - self._scores_built_at) < self._scores_ttl:
+#             return self._scores_cache
+
+#         sb = self.supabase
+
+#         # Using inline try-except handler helper due to length
+#         def safe_query(table, cols, eq_col=None, eq_val=None):
+#             try:
+#                 q = sb.table(table).select(cols)
+#                 if eq_col: q = q.eq(eq_col, eq_val)
+#                 return q.execute().data or []
+#             except Exception: return []
+
+#         likes_rows = safe_query("post_reactions", "user_id", "reaction", "like")
+#         clubs_rows = safe_query("club_members", "user_id")
+#         strava_rows = safe_query("strava_stats", "user_id, total_distance_km")
+#         github_rows = safe_query("github_stats", "user_id, total_commits, streak_days")
+#         movie_rows = safe_query("movie_reviews", "user_id")
+#         game_rows = safe_query("game_reviews", "user_id")
+
+#         likes_count, clubs_count, strava_map, github_map, movie_count, game_count = {}, {}, {}, {}, {}, {}
+
+#         # ... (the rest of your logic remains exactly the same)
+#         # Using inline try-except handler helper due to length
+#         def safe_query(table, cols, eq_col=None, eq_val=None):
+#             try:
+#                 q = sb.table(table).select(cols)
+#                 if eq_col: q = q.eq(eq_col, eq_val)
+#                 return q.execute().data or []
+#             except Exception: return []
+
+#         likes_rows = safe_query("post_reactions", "user_id", "reaction", "like")
+#         clubs_rows = safe_query("club_members", "user_id")
+#         strava_rows = safe_query("strava_stats", "user_id, total_distance_km")
+#         github_rows = safe_query("github_stats", "user_id, total_commits, streak_days")
+#         movie_rows = safe_query("movie_reviews", "user_id")
+#         game_rows = safe_query("game_reviews", "user_id")
+
+#         likes_count, clubs_count, strava_map, github_map, movie_count, game_count = {}, {}, {}, {}, {}, {}
+
+#         for r in likes_rows: likes_count[r["user_id"]] = likes_count.get(r["user_id"], 0) + 1
+#         for r in clubs_rows: clubs_count[r["user_id"]] = clubs_count.get(r["user_id"], 0) + 1
+#         for r in strava_rows: strava_map[r["user_id"]] = {"connected": True, "km": float(r.get("total_distance_km") or 0)}
+#         for r in github_rows: github_map[r["user_id"]] = {"commits": int(r.get("total_commits") or 0), "streak": int(r.get("streak_days") or 0)}
+#         for r in movie_rows: movie_count[r["user_id"]] = movie_count.get(r["user_id"], 0) + 1
+#         for r in game_rows: game_count[r["user_id"]] = game_count.get(r["user_id"], 0) + 1
+
+#         all_uids = self._discover_all_user_ids()
+#         all_uids |= set(likes_count) | set(clubs_count) | set(strava_map) | set(github_map) | set(movie_count) | set(game_count)
+
+#         scores = {}
+#         for uid in all_uids:
+#             score = 0.0
+#             score += likes_count.get(uid, 0) * 2.0
+#             score += clubs_count.get(uid, 0) * 15.0
+#             if uid in strava_map:
+#                 score += 10.0 + (strava_map[uid]["km"] * 0.5)
+#             gh = github_map.get(uid, {})
+#             score += gh.get("commits", 0) * 1.0 + gh.get("streak", 0) * 5.0
+#             score += movie_count.get(uid, 0) * 3.0 + game_count.get(uid, 0) * 3.0
+#             scores[uid] = round(score, 1)
+
+#         self._scores_cache = scores
+#         self._scores_built_at = time.time()
+#         return scores
+
+#     def invalidate_scores_cache(self):
+#         self._scores_cache = {}
+#         self._scores_built_at = 0.0
+
+#     def _get_all_club_sets(self) -> dict:
+#         try: rows = self.supabase.table("club_members").select("user_id, clubs(name)").execute().data or []
+#         except Exception: rows = []
+#         res = {}
+#         for r in rows:
+#             name = (r.get("clubs") or {}).get("name", "")
+#             if name: res.setdefault(r["user_id"], set()).add(name.lower())
+#         return res
+
+#     def _get_all_category_sets(self) -> dict:
+#         try: rows = self.supabase.table("post_reactions").select("user_id, posts(category)").eq("reaction", "like").execute().data or []
+#         except Exception: rows = []
+#         res = {}
+#         for r in rows:
+#             cat = (r.get("posts") or {}).get("category", "")
+#             if cat: res.setdefault(r["user_id"], set()).add(cat.lower())
+#         return res
+
+#     @staticmethod
+#     def _jaccard(a: set, b: set) -> float:
+#         union = a | b
+#         return len(a & b) / len(union) if union else 0.0
+
+#     def get_similarity_ranked_users(self, user_id: str) -> list:
+#         all_scores = self.get_all_user_scores()
+#         my_score = all_scores.get(user_id, 0)
+#         all_clubs, all_cats = self._get_all_club_sets(), self._get_all_category_sets()
+#         my_clubs = all_clubs.get(user_id, set())
+#         my_cats = all_cats.get(user_id, set())
+#         my_interests = my_clubs | my_cats
+
+#         results = []
+#         for other_id, other_score in all_scores.items():
+#             if other_id == user_id: continue
+#             other_clubs = all_clubs.get(other_id, set())
+#             other_cats = all_cats.get(other_id, set())
+#             other_interests = other_clubs | other_cats
+            
+#             sim = self._jaccard(my_interests, other_interests)
+#             match_pct = round(sim * 100)
+#             if not my_interests and not other_interests:
+#                 diff = abs(my_score - other_score)
+#                 match_pct = max(10, round((1 - diff / max(my_score, other_score, 1)) * 100))
+
+#             results.append({
+#                 "user_id": other_id, "score": other_score, "match_pct": match_pct,
+#                 "role": "mentor" if other_score > my_score else "mentee",
+#                 "shared_clubs": list(my_clubs & other_clubs),
+#                 "shared_categories": list(my_cats & other_cats),
+#             })
+#         results.sort(key=lambda x: (x["match_pct"], x["score"]), reverse=True)
+#         return results
+
+#     def get_user_activity(self, target_user_id: str) -> dict:
+#         sb = self.supabase
+#         all_clubs = self._get_all_club_sets()
+        
+#         def safe_q(table, cols, eq_col=None, eq_val=None):
+#             try:
+#                 q = sb.table(table).select(cols)
+#                 if eq_col: q = q.eq(eq_col, eq_val)
+#                 return q.execute().data or []
+#             except Exception: return []
+
+#         return {
+#             "clubs": sorted(list(all_clubs.get(target_user_id, set()))),
+#             "post_likes": safe_q("post_reactions", "posts(title, category)", "user_id", target_user_id),
+#             "strava": (safe_q("strava_stats", "total_distance_km, total_elevation_m, total_moving_time_hrs, score", "user_id", target_user_id) or [None])[0],
+#             "github": (safe_q("github_stats", "username, total_commits, streak_days, score", "user_id", target_user_id) or [None])[0],
+#             "movie_reviews": safe_q("movie_reviews", "*", "user_id", target_user_id),
+#             "game_reviews": safe_q("game_reviews", "*", "user_id", target_user_id),
+#             "hgt_score": self.get_all_user_scores().get(target_user_id, 0),
+#         }
+
+#     def _fetch_profiles_map(self, user_ids: list) -> dict:
+#         if not user_ids: return {}
+#         try:
+#             rows = self.supabase.table("profiles").select("id, username, avatar_url").in_("id", user_ids).execute().data or []
+#             result = {r["id"]: r for r in rows}
+#             for uid in user_ids:
+#                 if uid not in result: result[uid] = {"id": uid, "username": uid[:8], "avatar_url": None}
+#             return result
+#         except Exception:
+#             return {uid: {"id": uid, "username": uid[:8], "avatar_url": None} for uid in user_ids}
+
+#     async def get_user_dashboard(self, user_id: str) -> dict:
+#         all_scores = self.get_all_user_scores()
+#         sorted_users = sorted(all_scores.items(), key=lambda x: x[1], reverse=True)
+#         rank = next((i + 1 for i, (uid, _) in enumerate(sorted_users) if uid == user_id), None)
+        
+#         similarity_ranked = self.get_similarity_ranked_users(user_id)
+#         profiles_map = self._fetch_profiles_map(list({r["user_id"] for r in similarity_ranked[:10]}))
+
+#         def enrich(records, include_activity=False):
+#             enriched = []
+#             for r in records:
+#                 p = profiles_map.get(r["user_id"], {})
+#                 entry = {**r, "username": p.get("username", r["user_id"][:8]), "avatar_url": p.get("avatar_url")}
+#                 if include_activity: entry["activity"] = self.get_user_activity(r["user_id"])
+#                 enriched.append(entry)
+#             return enriched
+
+#         return {
+#             "total_score": all_scores.get(user_id, 0), "rank": rank, "total_users": len(all_scores),
+#             "top_similar": enrich(similarity_ranked[:3], True),
+#             "mentors": enrich([r for r in similarity_ranked if r["role"] == "mentor"][:5]),
+#             "mentees": enrich([r for r in similarity_ranked if r["role"] == "mentee"][:5]),
+#         }
+
+#     async def get_leaderboard(self, top_k: int = 50, requesting_user_id: str = None) -> list:
+#         all_scores = self.get_all_user_scores()
+#         sorted_users = sorted(all_scores.items(), key=lambda x: x[1], reverse=True)
+#         if not sorted_users: return []
+
+#         profiles_map = self._fetch_profiles_map([uid for uid, _ in sorted_users[:top_k]])
+#         all_clubs, all_cats = self._get_all_club_sets(), self._get_all_category_sets()
+
+#         my_clubs = all_clubs.get(requesting_user_id, set()) if requesting_user_id else set()
+#         my_cats = all_cats.get(requesting_user_id, set()) if requesting_user_id else set()
+#         my_interests = my_clubs | my_cats
+
+#         results = []
+#         for rank_idx, (uid, score) in enumerate(sorted_users[:top_k]):
+#             profile = profiles_map.get(uid, {})
+#             other_clubs, other_cats = all_clubs.get(uid, set()), all_cats.get(uid, set())
+            
+#             match_pct = None
+#             shared_clubs, shared_categories = [], []
+            
+#             if requesting_user_id and uid != requesting_user_id:
+#                 other_interests = other_clubs | other_cats
+#                 sim = self._jaccard(my_interests, other_interests)
+#                 match_pct = round(sim * 100)
+#                 if not my_interests and not other_interests:
+#                     diff = abs(all_scores.get(requesting_user_id, 0) - score)
+#                     match_pct = max(10, round((1 - diff / max(all_scores.get(requesting_user_id, 0), score, 1)) * 100))
+                
+#                 shared_clubs = list(my_clubs & other_clubs)
+#                 shared_categories = list(my_cats & other_cats)
+
+#             match_count = sum(1 for ouid, _ in sorted_users if ouid != uid and self._jaccard(
+#                 all_clubs.get(uid, set()) | all_cats.get(uid, set()),
+#                 all_clubs.get(ouid, set()) | all_cats.get(ouid, set())
+#             ) >= 0.10)
+            
+#             div_mult = 1 + min(match_count * 0.05, 0.5)
+
+#             results.append({
+#                 "rank": rank_idx + 1,
+#                 "user_id": uid,
+#                 "username": profile.get("username", uid[:8]),
+#                 "avatar_url": profile.get("avatar_url"),
+#                 "total_score": round(score * div_mult, 1),
+#                 "similarity_to_me": match_pct,
+#                 "shared_clubs": shared_clubs,             # <--- UI NEEDS THIS
+#                 "shared_categories": shared_categories,   # <--- UI NEEDS THIS
+#                 "activity": self.get_user_activity(uid)   # <--- UI NEEDS THIS to draw the path!
+#             })
+
+#         return results
