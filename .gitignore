@@ -19,3 +19,5 @@ services/connect/spotify_test.py
 services/connect/.spotify_cache
 services/connect/spotify_test01.py
 services/connect/.cache
+services/connect/steam_data_76561199839671797.json
+services/connect/steam_test.py
