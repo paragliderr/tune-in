@@ -8,6 +8,7 @@ from services.github_service import GitHubService
 from services.strava_service import StravaService
 from services.letterboxd_service import LetterboxdService
 from services.spotify_service import SpotifyService
+from services.steam_service import SteamService
 
 router = APIRouter(prefix="/connect", tags=["connect"])
 
@@ -24,6 +25,10 @@ class StravaConnectRequest(BaseModel):
     client_secret: str
     refresh_token: str
     code: Optional[str] = None
+
+class SteamConnectRequest(BaseModel):
+    api_key: str
+    steam_id: str
 
 def get_supabase():
     url = os.getenv("SUPABASE_URL")
@@ -102,7 +107,6 @@ def _persist_strava_tokens(
     refresh_token: str,
     expires_at: str,
 ):
-    """Upsert all Strava token fields, including the (possibly rotated) refresh_token."""
     token_entry = {
         "user_id": user_id,
         "client_id": client_id,
@@ -122,13 +126,10 @@ def process_strava_sync(user_id: str, client_id: str, client_secret: str, refres
         supabase = get_supabase()
         strava = StravaService(client_id, client_secret, refresh_token)
 
-        # _get_access_token() may perform a token refresh and rotate refresh_token.
-        # Capture whatever the service holds after the call.
         access_token = strava._get_access_token()
         new_refresh_token = getattr(strava, "refresh_token", refresh_token)
         expires_at = datetime.fromtimestamp(strava.expires_at, tz=timezone.utc).isoformat()
 
-        # Persist rotated tokens immediately so they're not lost even if stats fail.
         _persist_strava_tokens(
             supabase, user_id, client_id, client_secret,
             access_token, new_refresh_token, expires_at,
@@ -136,8 +137,6 @@ def process_strava_sync(user_id: str, client_id: str, client_secret: str, refres
 
         data = strava.get_user_data()
 
-        # Update profile handle
-        print(f"[SYNC] Updating Strava handle to @{data['username']}")
         profile_res = supabase.table("profiles").select("connections").eq("id", user_id).single().execute()
         if profile_res.data:
             connections = profile_res.data.get("connections", {}) or {}
@@ -167,7 +166,6 @@ def process_strava_sync(user_id: str, client_id: str, client_secret: str, refres
 # ---------------------------------------------------------------------------
 
 def _persist_spotify_tokens(supabase, user_id: str, client_id: str, client_secret: str, refresh_token: str):
-    """Upsert Spotify token fields (no access_token — fetched on demand)."""
     token_entry = {
         "user_id": user_id,
         "client_id": client_id,
@@ -185,60 +183,98 @@ def process_spotify_sync(user_id: str, client_id: str, client_secret: str, refre
         supabase = get_supabase()
         spotify = SpotifyService(client_id, client_secret, refresh_token)
 
-        # Refresh token
         spotify._refresh_access_token()
         access_token = spotify._access_token
         new_refresh_token = getattr(spotify, "refresh_token", refresh_token)
 
-        # Save tokens
         _persist_spotify_tokens(supabase, user_id, client_id, client_secret, new_refresh_token)
 
-        # Fetch FULL data
         data = spotify.get_user_data()
 
-        # -----------------------------
-        # Update profile connection
-        # -----------------------------
         profile_res = supabase.table("profiles").select("connections").eq("id", user_id).single().execute()
         if profile_res.data:
             connections = profile_res.data.get("connections", {}) or {}
             connections["spotify"] = data["username"]
             supabase.table("profiles").update({"connections": connections}).eq("id", user_id).execute()
 
-        # -----------------------------
-        # STRUCTURED DATA EXTRACTION
-        # -----------------------------
         stats = data.get("stats", {})
 
         stats_entry = {
             "user_id": user_id,
             "username": data.get("username"),
-
-            # 🔥 Core metrics
             "followers": data.get("followers", 0),
             "product": data.get("product"),
-
             "playlist_count": stats.get("playlist_count", 0),
             "saved_tracks": stats.get("saved_tracks", 0),
             "top_artist_count": stats.get("top_artist_count", 0),
             "top_track_count": stats.get("top_track_count", 0),
-
-            # 🔥 Advanced data
             "vibe": stats.get("vibe", {}),
             "currently_playing": data.get("currently_playing"),
-
-            # 🔥 Full dump (for future use)
             "raw_data": data,
-
             "updated_at": data.get("fetched_at", datetime.now(timezone.utc).isoformat()),
         }
 
         supabase.table("spotify_stats").upsert(stats_entry, on_conflict="user_id").execute()
-
         print(f"✅ [OK] Spotify sync completed for {data['username']}")
-
     except Exception as e:
         print(f"❌ [ERROR] Spotify Sync Failed for user {user_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+
+# ---------------------------------------------------------------------------
+# Steam
+# ---------------------------------------------------------------------------
+
+def _persist_steam_tokens(supabase, user_id: str, api_key: str, steam_id: str):
+    """Upsert Steam credentials into steam_tokens table."""
+    token_entry = {
+        "user_id": user_id,
+        "api_key": api_key,
+        "steam_id": steam_id,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    supabase.table("steam_tokens").upsert(token_entry, on_conflict="user_id").execute()
+
+
+def process_steam_sync(user_id: str, api_key: str, steam_id: str):
+    """Fetch stats from Steam and persist to steam_stats table."""
+    try:
+        print(f"\n[SYNC] Starting Steam sync for user {user_id}...")
+        supabase = get_supabase()
+        steam = SteamService(api_key, steam_id)
+
+        data = steam.get_user_data()
+        display_name = data["summary"].get("display_name", steam_id)
+
+        # Update profile connections
+        profile_res = supabase.table("profiles").select("connections").eq("id", user_id).single().execute()
+        if profile_res.data:
+            connections = profile_res.data.get("connections", {}) or {}
+            connections["steam"] = display_name
+            supabase.table("profiles").update({"connections": connections}).eq("id", user_id).execute()
+
+        summary = data.get("summary", {})
+        score   = data.get("score", {})
+
+        stats_entry = {
+            "user_id":            user_id,
+            "username":           display_name,
+            "steam_id":           steam_id,
+            "steam_level":        summary.get("steam_level"),
+            "total_games":        summary.get("total_games", 0),
+            "total_playtime_hrs": summary.get("total_playtime_hrs", 0),
+            "total_badges":       summary.get("total_badges", 0),
+            "total_achievements": summary.get("total_achievements", 0),
+            "friend_count":       summary.get("friend_count", 0),
+            "score":              score.get("total_score", 0),
+            "raw_data":           data,
+            "updated_at":         data.get("fetched_at", datetime.now(timezone.utc).isoformat()),
+        }
+        supabase.table("steam_stats").upsert(stats_entry, on_conflict="user_id").execute()
+        print(f"✅ [OK] Steam sync completed for {display_name}")
+    except Exception as e:
+        print(f"❌ [ERROR] Steam Sync Failed for user {user_id}: {str(e)}")
         import traceback
         traceback.print_exc()
 
@@ -295,7 +331,6 @@ async def connect_strava(req: StravaConnectRequest, background_tasks: Background
         else:
             print(f"[SYNC] Using existing refresh token for user {user_id}")
             current_access_token = strava._get_access_token()
-            # Capture the possibly-rotated refresh token after the call.
             current_refresh_token = getattr(strava, "refresh_token", req.refresh_token)
             current_expires_at = datetime.fromtimestamp(strava.expires_at, tz=timezone.utc).isoformat()
 
@@ -346,6 +381,11 @@ async def connect_spotify(req: SpotifyConnectRequest, background_tasks: Backgrou
 
         _persist_spotify_tokens(supabase, user_id, req.client_id, req.client_secret, new_refresh_token)
 
+        profile_res = supabase.table("profiles").select("connections").eq("id", user_id).single().execute()
+        connections = (profile_res.data or {}).get("connections", {}) or {}
+        connections["spotify"] = "connected"
+        supabase.table("profiles").update({"connections": connections}).eq("id", user_id).execute()
+
         background_tasks.add_task(process_spotify_sync, user_id, req.client_id, req.client_secret, new_refresh_token)
     except Exception as e:
         print(f"[ERROR] Spotify Link Failed: {str(e)}")
@@ -367,6 +407,58 @@ async def sync_spotify(background_tasks: BackgroundTasks, authorization: str = H
     d = token_res.data
     background_tasks.add_task(process_spotify_sync, user_id, d["client_id"], d["client_secret"], d["refresh_token"])
     return {"status": "success", "message": "Spotify background sync started!"}
+
+
+# ---------------------------------------------------------------------------
+# Routes — Steam
+# ---------------------------------------------------------------------------
+
+@router.post("/steam")
+async def connect_steam(req: SteamConnectRequest, background_tasks: BackgroundTasks, authorization: str = Header(None)):
+    user = await verify_supabase_user(authorization)
+    user_id = user.id
+    supabase = get_supabase()
+
+    try:
+        # Validate credentials by doing a quick player summary fetch
+        steam = SteamService(req.api_key, req.steam_id)
+        profile = steam.fetch_player_summary()
+        if not profile:
+            raise HTTPException(status_code=400, detail="Invalid Steam API key or Steam ID — could not fetch profile.")
+
+        # Persist credentials
+        _persist_steam_tokens(supabase, user_id, req.api_key, req.steam_id)
+
+        # Immediately mark as connected so frontend shows Sync button right away
+        display_name = profile.get("personaname", req.steam_id)
+        profile_res = supabase.table("profiles").select("connections").eq("id", user_id).single().execute()
+        connections = (profile_res.data or {}).get("connections", {}) or {}
+        connections["steam"] = display_name
+        supabase.table("profiles").update({"connections": connections}).eq("id", user_id).execute()
+
+        background_tasks.add_task(process_steam_sync, user_id, req.api_key, req.steam_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[ERROR] Steam Link Failed: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {"status": "success", "message": "Steam linked! Syncing in background..."}
+
+
+@router.post("/steam/sync")
+async def sync_steam(background_tasks: BackgroundTasks, authorization: str = Header(None)):
+    user = await verify_supabase_user(authorization)
+    user_id = user.id
+    supabase = get_supabase()
+
+    token_res = supabase.table("steam_tokens").select("*").eq("user_id", user_id).single().execute()
+    if not token_res.data:
+        raise HTTPException(400, "Steam not linked")
+
+    d = token_res.data
+    background_tasks.add_task(process_steam_sync, user_id, d["api_key"], d["steam_id"])
+    return {"status": "success", "message": "Steam background sync started!"}
 
 
 # ---------------------------------------------------------------------------
