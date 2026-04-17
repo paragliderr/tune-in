@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { Search } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import type { Conversation } from "./DMPage";
 
 interface DMSidebarProps {
@@ -97,6 +98,8 @@ const DMSidebar = ({
   searchQuery,
   onSearchChange,
 }: DMSidebarProps) => {
+  const navigate = useNavigate();
+
   const filteredPeople = people
     .filter((p) =>
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -147,35 +150,38 @@ const DMSidebar = ({
       </div>
 
       {/* List */}
-<div className="flex-1 overflow-y-auto scrollbar-hide">
-  {filteredPeople.length > 0 ? (
-    <motion.div layout className="py-2">
-      {filteredPeople.map((c, i) => (
-        <ConvoItem
-          key={c.id}
-          convo={c}
-          isSelected={selectedId === c.id}
-          onSelect={() => onSelect(c)}
-          index={i}
-        />
-      ))}
-    </motion.div>
-  ) : (
-    <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-      <div className="w-12 h-12 rounded-full bg-muted/20 flex items-center justify-center mb-4">
-        <Search className="w-6 h-6 text-muted-foreground/40" />
+      <div className="flex-1 overflow-y-auto scrollbar-hide">
+        {filteredPeople.length > 0 ? (
+          <motion.div layout className="py-2">
+            {filteredPeople.map((c, i) => (
+              <ConvoItem
+                key={c.id}
+                convo={c}
+                isSelected={selectedId === c.id}
+                onSelect={() => {
+                  onSelect(c);
+                  navigate(`/messages/${c.username}`);
+                }}
+                index={i}
+              />
+            ))}
+          </motion.div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-muted/20 flex items-center justify-center mb-4">
+              <Search className="w-6 h-6 text-muted-foreground/40" />
+            </div>
+            <p className="text-sm font-medium text-foreground">
+              No conversations yet
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {searchQuery
+                ? "No results found for your search."
+                : "Click on a profile to message someone and start chatting."}
+            </p>
+          </div>
+        )}
       </div>
-      <p className="text-sm font-medium text-foreground">
-        No conversations yet
-      </p>
-      <p className="text-xs text-muted-foreground mt-1">
-        {searchQuery
-          ? "No results found for your search."
-          : "Click on a profile to message someone and start chatting."}
-      </p>
-    </div>
-  )}
-</div>
     </motion.aside>
   );
 };
