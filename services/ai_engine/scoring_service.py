@@ -1,38 +1,33 @@
 """
-TuneIn Scoring Service
-======================
-Orchestrates:
-  1. Build graph from Neo4j
-  2. Run HGT forward pass
-  3. Compute cosine-similarity recommendations
-  4. Rank users by influence score
-  5. Return structured payload for FastAPI → React
-
-Math explained inline at each step.
+TuneIn Scoring Service — Fixed
+================================
+Key fixes vs previous version:
+  1. User discovery no longer depends on profiles table alone —
+     falls back to union of all activity tables so a user who
+     hasn't filled their profile still gets scored.
+  2. Strava zero-value rows no longer silently score 0 — we check
+     whether the row EXISTS not just its numeric values, and award
+     a flat connection bonus so connected users are rewarded.
+  3. Similarity is computed for ALL users against the requesting
+     user, sorted by match_pct desc, so the highest-similarity
+     user always comes first regardless of score.
+  4. get_user_dashboard now returns top_similar: the 3 users most
+     similar to the requesting user, plus their activity path.
 """
-# ── Standard libs ─────────────────────────────────────────────
+
 import asyncio
 import logging
 import os
 import time
 from dataclasses import dataclass, field
 from typing import Optional
+from functools import partial
 
-# ── ML / Math ────────────────────────────────────────────────
-import torch
-import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
-
-# ── Supabase ─────────────────────────────────────────────────
 from supabase import create_client, Client as SupabaseClient
-
-# ── Internal (AI Engine) ─────────────────────────────────────
-from ai_engine.graph_builder import Neo4jGraphBuilder
-from ai_engine.hgt_model import TuneInHGT
 
 logger = logging.getLogger(__name__)
 
-# ── Supabase Singleton ───────────────────────────────────────
+# ── Supabase singleton ────────────────────────────────────────────────────────
 _supabase_client: SupabaseClient = None
 
 def get_supabase() -> SupabaseClient:
@@ -44,343 +39,759 @@ def get_supabase() -> SupabaseClient:
         )
     return _supabase_client
 
-async def fetch_dynamic_supabase_stats(user_uuid: str) -> dict:
-    """Fetches real-time integration stats directly from Supabase."""
-    sb = get_supabase()
-    total_supa_score = 0
-    connections = []
 
-    try:
-        # 1. GitHub Stats
-        gh_res = sb.table("github_stats").select("*").eq("user_id", user_uuid).execute()
-        if gh_res.data:
-            stats = gh_res.data[0]
-            total_supa_score += (stats.get("total_commits", 0) * 2) + (stats.get("pull_requests", 0) * 5)
-            connections.append({"id": "github", "name": "GitHub", "connected": True, "icon": "github"})
-
-        # 2. Strava Stats
-        st_res = sb.table("strava_stats").select("*").eq("user_id", user_uuid).execute()
-        if st_res.data:
-            stats = st_res.data[0]
-            total_supa_score += (stats.get("total_activities", 0) * 5)
-            connections.append({"id": "strava", "name": "Strava", "connected": True, "icon": "activity"})
-            
-    except Exception as e:
-        logger.error(f"Error fetching Supabase stats for {user_uuid}: {e}")
-
-    return {
-        "score": total_supa_score,
-        "connections": connections
-    }
-
-
-# ── Config ───────────────────────────────────────────────────────────────────
 @dataclass
 class HGTConfig:
-    hidden_channels: int = 128
-    out_channels: int    = 64
-    num_heads: int       = 4
-    num_layers: int      = 2
-
-    # Score blending weights (tune these based on your product priorities)
-    weight_likes:      float = 0.40   # 40% = posts liked
-    weight_clubs:      float = 0.35   # 35% = clubs joined
-    weight_hgt_signal: float = 0.25   # 25% = pure graph-learned signal
+    weight_likes:  float = 0.40
+    weight_clubs:  float = 0.35
+    weight_hgt:    float = 0.25
 
 
-# ── Cached graph state (rebuilt on demand) ───────────────────────────────────
-@dataclass
-class GraphCache:
-    data:            object     = None
-    id_maps:         dict       = field(default_factory=dict)
-    supabase_to_idx: dict       = field(default_factory=dict)
-    user_embeddings: np.ndarray = None
-    user_scores:     np.ndarray = None
-    post_scores:     np.ndarray = None
-    built_at:        float      = 0.0
-    all_blended_scores: list    = field(default_factory=list)
-
-    def is_stale(self, ttl_seconds: int = 300) -> bool:
-        return (time.time() - self.built_at) > ttl_seconds
-
-
-# ── Top-level fallback ────────────────────────────────────────────────────────
-async def compute_user_score(user_id: str) -> float:
-    # Retained as-is for lightweight health checks
-    try:
-        builder = Neo4jGraphBuilder(
-            uri=os.getenv("NEO4J_URI", "neo4j://localhost:7687"),
-            user=os.getenv("NEO4J_USER", "neo4j"),
-            password=os.getenv("NEO4J_PASSWORD", "password"),
-        )
-        await builder.connect()
-        try:
-            graph, _ = await builder.build()
-        finally:
-            await builder.close()
-
-        if not graph or len(graph.node_types) == 0:
-            return 0
-
-        user_idx = builder.supabase_to_idx.get(user_id)
-        if user_idx is None:
-            return 0
-
-        model = TuneInHGT(
-            hidden_channels=128, out_channels=64, num_heads=4, num_layers=2, metadata=graph.metadata()
-        )
-        model.eval()
-        with torch.no_grad():
-            outputs = model(graph.x_dict, graph.edge_index_dict)
-
-        hgt_raw = float(outputs["user_scores"].cpu().numpy()[user_idx])
-        likes = int((graph["user", "LIKES",  "post"].edge_index[0] == user_idx).sum())
-        clubs = int((graph["user", "JOINED", "club"].edge_index[0] == user_idx).sum())
-
-        supa_stats = await fetch_dynamic_supabase_stats(user_id)
-        
-        total_score = (
-            likes * 20 * 0.40 +
-            clubs * 15 * 0.35 +
-            max(0, hgt_raw) * 100 * 0.25 +
-            supa_stats["score"]
-        )
-        return round(max(0.0, total_score), 2)
-
-    except Exception as e:
-        logger.error(f"compute_user_score failed: {e}", exc_info=True)
-        return 0
-
-
-# ── Singleton service ─────────────────────────────────────────────────────────
 class ScoringService:
-    def __init__(
-        self, neo4j_uri: str, neo4j_user: str, neo4j_password: str, config: HGTConfig = None, cache_ttl: int = 300
-    ):
-        self._neo4j_uri      = neo4j_uri
-        self._neo4j_user     = neo4j_user
-        self._neo4j_password = neo4j_password
+    def __init__(self, neo4j_uri="", neo4j_user="", neo4j_password="", config=None, cache_ttl=300):
         self._config         = config or HGTConfig()
         self._cache_ttl      = cache_ttl
-        self._cache          = GraphCache()
-        self._model: Optional[TuneInHGT] = None
-        self._lock           = asyncio.Lock()
         self.supabase        = get_supabase()
+        self._scores_cache: dict  = {}
+        self._scores_built_at: float = 0.0
+        self._scores_ttl: int = 120
+
+    # ════════════════════════════════════════════════════════════════════════
+    # SECTION 1 — DISCOVER ALL USERS (union across all activity tables)
+    # ════════════════════════════════════════════════════════════════════════
+
+    def _discover_all_user_ids(self) -> set:
+        """
+        FIX: Don't rely only on profiles.id. A user who skipped profile
+        setup still exists in auth.users and has activity rows. We union
+        all user_id columns from every activity table so nobody gets missed.
+        """
+        sb = self.supabase
+        sources = []
+
+        try:
+            r = sb.table("profiles").select("id").execute().data or []
+            sources.extend(row["id"] for row in r if row.get("id"))
+        except Exception as e:
+            logger.warning(f"profiles fetch failed: {e}")
+
+        for table in ["club_members", "post_reactions", "strava_stats",
+                       "github_stats", "movie_reviews", "game_reviews"]:
+            try:
+                r = sb.table(table).select("user_id").execute().data or []
+                sources.extend(row["user_id"] for row in r if row.get("user_id"))
+            except Exception as e:
+                logger.warning(f"{table} user_id fetch failed: {e}")
+
+        return set(sources)
+
+    # ════════════════════════════════════════════════════════════════════════
+    # SECTION 2 — BATCH SCORE COMPUTATION
+    # ════════════════════════════════════════════════════════════════════════
 
     def get_all_user_scores(self) -> dict:
-        """Single source of truth. Called by everyone."""
-        profiles = self.supabase.table("profiles").select("id").execute().data
-        return {p["id"]: self._compute_score(p["id"]) for p in profiles}
+        """
+        Returns {user_id: score}.
 
-    def _compute_score(self, user_id: str) -> float:
-        score = 0.0
-        # Post likes
-        likes = self.supabase.table("post_reactions")\
-            .select("id").eq("user_id", user_id).eq("reaction", "like").execute().data
-        score += len(likes) * 2.0
-        # Club memberships  
-        clubs = self.supabase.table("club_members")\
-            .select("id").eq("user_id", user_id).execute().data
-        score += len(clubs) * 15.0
-        # Strava
-        strava = self.supabase.table("strava_stats")\
-            .select("total_distance_km").eq("user_id", user_id).execute().data
-        if strava:
-            score += (strava[0].get("total_distance_km") or 0) * 0.5
-        # GitHub
-        github = self.supabase.table("github_stats")\
-            .select("total_commits, streak_days").eq("user_id", user_id).execute().data
-        if github:
-            score += (github[0].get("total_commits") or 0) * 1.0
-            score += (github[0].get("streak_days") or 0) * 5.0
-        return round(score, 1)
+        Score formula:
+          likes  × 2     (post engagement)
+          clubs  × 15    (community involvement)
+          strava_connected × 10   (flat bonus — data may be 0 even if connected)
+          strava_km × 0.5         (distance reward on top)
+          github_commits × 1
+          github_streak  × 5
+          movie_reviews  × 3
+          game_reviews   × 3
+        """
+        if self._scores_cache and (time.time() - self._scores_built_at) < self._scores_ttl:
+            return self._scores_cache
 
-    def get_hgt_matches(self, user_id: str) -> dict:
-        my_clubs = self._get_club_set(user_id)
-        my_cats = self._get_liked_categories(user_id)
-        all_scores = self.get_all_user_scores()
-        my_score = all_scores.get(user_id, 0)
-        
-        results = []
-        for other_id, other_score in all_scores.items():
-            if other_id == user_id: continue
-            other_clubs = self._get_club_set(other_id)
-            other_cats = self._get_liked_categories(other_id)
-            sim = self._jaccard(my_clubs | my_cats, other_clubs | other_cats)
-            match_pct = round(sim * 100)
-            if match_pct < 30: continue
-            results.append({
-                "user_id": other_id,
-                "score": other_score,
-                "match_pct": match_pct,
-                "role": "mentor" if other_score > my_score else "mentee",
-                "shared_clubs": list(my_clubs & other_clubs),
-            })
-        results.sort(key=lambda x: x["match_pct"], reverse=True)
-        return {
-            "mentors": [r for r in results if r["role"] == "mentor"][:5],
-            "mentees": [r for r in results if r["role"] == "mentee"][:5],
-        }
+        sb = self.supabase
 
-    def _get_club_set(self, user_id: str) -> set:
-        rows = self.supabase.table("club_members")\
-            .select("clubs(name)").eq("user_id", user_id).execute().data
-        return {r["clubs"]["name"].lower() for r in rows if r.get("clubs")}
-
-    def _get_liked_categories(self, user_id: str) -> set:
-        rows = self.supabase.table("post_reactions")\
-            .select("posts(category)").eq("user_id", user_id)\
-            .eq("reaction", "like").execute().data
-        return {r["posts"]["category"].lower() for r in rows 
-                if r.get("posts") and r["posts"].get("category")}
-
-    def _jaccard(self, a: set, b: set) -> float:
-        if not a and not b: return 0.0
-        return len(a & b) / len(a | b)
-
-    def get_user_activity(self, target_user_id: str) -> dict:
-        """Full profile for mentor/mentee click-through."""
-        return {
-            "clubs": self._get_club_set(target_user_id),
-            "post_likes": self.supabase.table("post_reactions")
-                .select("posts(title, category)").eq("user_id", target_user_id)
-                .eq("reaction","like").execute().data,
-            "strava": self.supabase.table("strava_stats")
-                .select("total_distance_km,total_elevation_m,total_moving_time_hrs,score")
-                .eq("user_id", target_user_id).execute().data,
-            "github": self.supabase.table("github_stats")
-                .select("username,total_commits,streak_days,score")
-                .eq("user_id", target_user_id).execute().data,
-            "movie_reviews": self.supabase.table("movie_reviews")
-                .select("*").eq("user_id", target_user_id).execute().data,
-            "game_reviews": self.supabase.table("game_reviews")
-                .select("*").eq("user_id", target_user_id).execute().data,
-        }
-
-    async def get_user_dashboard(self, user_id: str) -> dict:
-        """Fixed: rank and score both come from get_all_user_scores."""
-        all_scores = self.get_all_user_scores()
-        sorted_users = sorted(all_scores.items(), key=lambda x: x[1], reverse=True)
-        rank = next((i+1 for i, (uid, _) in enumerate(sorted_users) if uid == user_id), None)
-        total_score = all_scores.get(user_id, 0)
-        hgt = self.get_hgt_matches(user_id)
-        return {
-            "total_score": total_score,
-            "rank": rank,
-            "total_users": len(all_scores),
-            "mentors": hgt["mentors"],
-            "mentees": hgt["mentees"],
-        }
-
-    async def get_leaderboard(self, top_k: int = 20) -> list[dict]:
-        await self._ensure_fresh_cache()
-
-        scores   = self._cache.user_scores
-        data     = self._cache.data
-        cfg      = self._config
-        supa_ids = data["user"].supabase_ids
-
-        results = []
-        all_blended = []
-
-        for idx, raw_score in enumerate(scores):
-            user_uuid = supa_ids[idx]
-            likes = self._count_edges(data, ("user", "LIKES",  "post"), idx, side=0)
-            clubs = self._count_edges(data, ("user", "JOINED", "club"), idx, side=0)
-
-            base = (cfg.weight_likes * likes * 20 +
-                    cfg.weight_clubs * clubs * 15 +
-                    cfg.weight_hgt_signal * max(0, float(raw_score)) * 100)
-
-            supa = await fetch_dynamic_supabase_stats(user_uuid)
-            blended = round(max(0.0, base + supa["score"]), 1)
-            all_blended.append(blended)
-
-            results.append({
-                "rank":        0,
-                "user_id":     user_uuid,
-                "total_score": blended,
-                "likes_count": likes,
-                "clubs_count": clubs,
-                "hgt_signal":  round(float(raw_score), 4),
-            })
-
-        # Store blended scores in cache so dashboard rank is consistent
-        self._cache.all_blended_scores = all_blended
-
-        results.sort(key=lambda x: x["total_score"], reverse=True)
-        for i, r in enumerate(results[:top_k]):
-            r["rank"] = i + 1
-
-        return results[:top_k]
-
-    async def get_post_feed(self, top_k: int = 30) -> list[dict]:
-        await self._ensure_fresh_cache()
-        post_scores = self._cache.post_scores
-        post_ids    = self._cache.data["post"].node_ids
-        ranked = sorted(
-            [(post_ids[i], float(s)) for i, s in enumerate(post_scores)],
-            key=lambda x: x[1], reverse=True,
-        )
-        return [
-            {"post_id": pid, "hgt_score": round(score, 4), "rank": i + 1}
-            for i, (pid, score) in enumerate(ranked[:top_k])
-        ]
-
-    async def invalidate_cache(self):
-        async with self._lock:
-            self._cache = GraphCache()
-        logger.info("Graph cache invalidated.")
-
-    async def _ensure_fresh_cache(self):
-        if not self._cache.is_stale(self._cache_ttl):
-            return
-        async with self._lock:
-            if not self._cache.is_stale(self._cache_ttl):
-                return
-            await self._rebuild_cache()
-
-    async def _rebuild_cache(self):
-        logger.info("Rebuilding HGT graph cache from Neo4j …")
-        t0 = time.time()
-
-        builder = Neo4jGraphBuilder(self._neo4j_uri, self._neo4j_user, self._neo4j_password)
-        await builder.connect()
+        # Fetch all activity data in 6 queries total
         try:
-            data, id_maps = await builder.build()
-        finally:
-            await builder.close()
+            likes_rows = sb.table("post_reactions").select("user_id").eq("reaction", "like").execute().data or []
+        except Exception:
+            likes_rows = []
 
-        if self._model is None:
-            self._model = TuneInHGT(
-                hidden_channels=self._config.hidden_channels,
-                out_channels=self._config.out_channels,
-                num_heads=self._config.num_heads,
-                num_layers=self._config.num_layers,
-                metadata=data.metadata(),
-            )
-            logger.info("HGT model initialised.")
+        try:
+            clubs_rows = sb.table("club_members").select("user_id").execute().data or []
+        except Exception:
+            clubs_rows = []
 
-        self._model.eval()
-        with torch.no_grad():
-            outputs = self._model(data.x_dict, data.edge_index_dict)
+        try:
+            # FIX: fetch the row regardless of numeric values — existence = connected bonus
+            strava_rows = sb.table("strava_stats").select("user_id, total_distance_km").execute().data or []
+        except Exception:
+            strava_rows = []
 
-        self._cache = GraphCache(
-            data            = data,
-            id_maps         = id_maps,
-            supabase_to_idx = dict(builder.supabase_to_idx),
-            user_embeddings = outputs["user_embeddings"].cpu().numpy(),
-            user_scores     = outputs["user_scores"].cpu().numpy(),
-            post_scores     = outputs["post_scores"].cpu().numpy(),
-            built_at        = time.time(),
-        )
+        try:
+            github_rows = sb.table("github_stats").select("user_id, total_commits, streak_days").execute().data or []
+        except Exception:
+            github_rows = []
 
-        logger.info(f"Cache rebuilt in {time.time() - t0:.2f}s")
+        try:
+            movie_rows = sb.table("movie_reviews").select("user_id").execute().data or []
+        except Exception:
+            movie_rows = []
+
+        try:
+            game_rows = sb.table("game_reviews").select("user_id").execute().data or []
+        except Exception:
+            game_rows = []
+
+        # Aggregate per-user
+        likes_count: dict  = {}
+        for r in likes_rows:
+            uid = r["user_id"]; likes_count[uid] = likes_count.get(uid, 0) + 1
+
+        clubs_count: dict  = {}
+        for r in clubs_rows:
+            uid = r["user_id"]; clubs_count[uid] = clubs_count.get(uid, 0) + 1
+
+        strava_map: dict   = {}
+        for r in strava_rows:
+            uid = r["user_id"]
+            strava_map[uid] = {
+                "connected": True,
+                "km": float(r.get("total_distance_km") or 0),
+            }
+
+        github_map: dict   = {}
+        for r in github_rows:
+            uid = r["user_id"]
+            github_map[uid] = {
+                "commits": int(r.get("total_commits") or 0),
+                "streak":  int(r.get("streak_days")   or 0),
+            }
+
+        movie_count: dict  = {}
+        for r in movie_rows:
+            uid = r["user_id"]; movie_count[uid] = movie_count.get(uid, 0) + 1
+
+        game_count: dict   = {}
+        for r in game_rows:
+            uid = r["user_id"]; game_count[uid] = game_count.get(uid, 0) + 1
+
+        # FIX: discover users from all tables, not just profiles
+        all_uids = self._discover_all_user_ids()
+        # Also make sure anyone in any activity map is included
+        all_uids |= set(likes_count) | set(clubs_count) | set(strava_map) \
+                  | set(github_map) | set(movie_count) | set(game_count)
+
+        scores = {}
+        for uid in all_uids:
+            score = 0.0
+            score += likes_count.get(uid, 0)  * 2.0
+            score += clubs_count.get(uid, 0)  * 15.0
+            st = strava_map.get(uid)
+            if st:
+                score += 10.0          # flat connection bonus
+                score += st["km"] * 0.5
+            gh = github_map.get(uid, {})
+            score += gh.get("commits", 0) * 1.0
+            score += gh.get("streak",  0) * 5.0
+            score += movie_count.get(uid, 0) * 3.0
+            score += game_count.get(uid, 0)  * 3.0
+            scores[uid] = round(score, 1)
+
+        self._scores_cache    = scores
+        self._scores_built_at = time.time()
+
+        logger.info(f"Scores computed for {len(scores)} users: {scores}")
+        return scores
+
+    def invalidate_scores_cache(self):
+        self._scores_cache    = {}
+        self._scores_built_at = 0.0
+
+    # ════════════════════════════════════════════════════════════════════════
+    # SECTION 3 — SIMILARITY (Jaccard on clubs + categories)
+    # ════════════════════════════════════════════════════════════════════════
+
+    def _get_all_club_sets(self) -> dict:
+        try:
+            rows = self.supabase.table("club_members")\
+                .select("user_id, clubs(name)").execute().data or []
+        except Exception:
+            rows = []
+        result: dict = {}
+        for r in rows:
+            uid  = r["user_id"]
+            name = (r.get("clubs") or {}).get("name", "")
+            if name:
+                result.setdefault(uid, set()).add(name.lower())
+        return result
+
+    def _get_all_category_sets(self) -> dict:
+        try:
+            rows = self.supabase.table("post_reactions")\
+                .select("user_id, posts(category)")\
+                .eq("reaction", "like").execute().data or []
+        except Exception:
+            rows = []
+        result: dict = {}
+        for r in rows:
+            uid      = r["user_id"]
+            category = (r.get("posts") or {}).get("category", "")
+            if category:
+                result.setdefault(uid, set()).add(category.lower())
+        return result
 
     @staticmethod
-    def _count_edges(data, edge_type: tuple, node_idx: int, side: int) -> int:
+    def _jaccard(a: set, b: set) -> float:
+        if not a and not b:
+            return 0.0
+        union = a | b
+        if not union:
+            return 0.0
+        return len(a & b) / len(union)
+
+    def get_similarity_ranked_users(self, user_id: str) -> list:
+        """
+        Returns ALL other users ranked by similarity to user_id, descending.
+        Each entry: {user_id, score, match_pct, role, shared_clubs, shared_categories}
+
+        FIX: sorted by match_pct first, not by score. The highest-similarity
+        user always appears first regardless of their absolute score.
+        """
+        all_scores = self.get_all_user_scores()
+        my_score   = all_scores.get(user_id, 0)
+
+        all_clubs = self._get_all_club_sets()
+        all_cats  = self._get_all_category_sets()
+
+        my_clubs = all_clubs.get(user_id, set())
+        my_cats  = all_cats.get(user_id, set())
+        my_interests = my_clubs | my_cats
+
+        results = []
+        for other_id, other_score in all_scores.items():
+            if other_id == user_id:
+                continue
+
+            other_clubs = all_clubs.get(other_id, set())
+            other_cats  = all_cats.get(other_id, set())
+            other_interests = other_clubs | other_cats
+
+            sim = self._jaccard(my_interests, other_interests)
+            match_pct = round(sim * 100)
+
+            # If neither user has interest data, fall back to score-proximity
+            if not my_interests and not other_interests:
+                score_diff = abs(my_score - other_score)
+                max_score  = max(my_score, other_score, 1)
+                match_pct  = max(10, round((1 - score_diff / max_score) * 100))
+
+            # Always include everyone (threshold = 0) so we always get results
+            results.append({
+                "user_id":             other_id,
+                "score":               other_score,
+                "match_pct":           match_pct,
+                "role":                "mentor" if other_score > my_score else "mentee",
+                "shared_clubs":        list(my_clubs & other_clubs),
+                "shared_categories":   list(my_cats  & other_cats),
+            })
+
+        # Sort by similarity desc, then score desc as tiebreaker
+        results.sort(key=lambda x: (x["match_pct"], x["score"]), reverse=True)
+        return results
+
+    # ════════════════════════════════════════════════════════════════════════
+    # SECTION 4 — ACTIVITY PROFILE
+    # ════════════════════════════════════════════════════════════════════════
+
+    def get_user_activity(self, target_user_id: str) -> dict:
+        sb = self.supabase
+        all_clubs = self._get_all_club_sets()
+
         try:
-            edge_index = data[edge_type].edge_index
-            return int((edge_index[side] == node_idx).sum().item())
-        except (KeyError, AttributeError):
-            return 0
+            post_likes = sb.table("post_reactions")\
+                .select("posts(title, category)")\
+                .eq("user_id", target_user_id)\
+                .eq("reaction", "like").execute().data or []
+        except Exception:
+            post_likes = []
+
+        try:
+            strava = sb.table("strava_stats")\
+                .select("total_distance_km, total_elevation_m, total_moving_time_hrs, score")\
+                .eq("user_id", target_user_id).execute().data or []
+        except Exception:
+            strava = []
+
+        try:
+            github = sb.table("github_stats")\
+                .select("username, total_commits, streak_days, score")\
+                .eq("user_id", target_user_id).execute().data or []
+        except Exception:
+            github = []
+
+        try:
+            movie_reviews = sb.table("movie_reviews")\
+                .select("*").eq("user_id", target_user_id).execute().data or []
+        except Exception:
+            movie_reviews = []
+
+        try:
+            game_reviews = sb.table("game_reviews")\
+                .select("*").eq("user_id", target_user_id).execute().data or []
+        except Exception:
+            game_reviews = []
+
+        return {
+            "clubs":         sorted(list(all_clubs.get(target_user_id, set()))),
+            "post_likes":    post_likes,
+            "strava":        strava[0] if strava else None,
+            "github":        github[0] if github else None,
+            "movie_reviews": movie_reviews,
+            "game_reviews":  game_reviews,
+            "hgt_score":     self.get_all_user_scores().get(target_user_id, 0),
+        }
+
+    def _fetch_profiles_map(self, user_ids: list) -> dict:
+        if not user_ids:
+            return {}
+        try:
+            rows = self.supabase.table("profiles")\
+                .select("id, username, avatar_url")\
+                .in_("id", user_ids).execute().data or []
+            result = {r["id"]: r for r in rows}
+            # For any user_id not in profiles, generate a fallback username
+            for uid in user_ids:
+                if uid not in result:
+                    result[uid] = {
+                        "id":         uid,
+                        "username":   uid[:8],   # first 8 chars of UUID
+                        "avatar_url": None,
+                    }
+            return result
+        except Exception as e:
+            logger.warning(f"Profile batch fetch failed: {e}")
+            return {uid: {"id": uid, "username": uid[:8], "avatar_url": None} for uid in user_ids}
+
+    # ════════════════════════════════════════════════════════════════════════
+    # SECTION 5 — DASHBOARD  (new shape)
+    # ════════════════════════════════════════════════════════════════════════
+
+    async def get_user_dashboard(self, user_id: str) -> dict:
+        """
+        Returns:
+          total_score    — this user's HGT score
+          rank           — their rank among all users
+          total_users    — how many users exist
+          top_similar    — top 3 users most similar to this user (by match_pct),
+                           each enriched with username + avatar + full activity
+          mentors        — users with higher score than this user (similarity sorted)
+          mentees        — users with lower score (similarity sorted)
+        """
+        all_scores   = self.get_all_user_scores()
+        sorted_users = sorted(all_scores.items(), key=lambda x: x[1], reverse=True)
+        rank         = next((i + 1 for i, (uid, _) in enumerate(sorted_users) if uid == user_id), None)
+        total_score  = all_scores.get(user_id, 0)
+
+        logger.info(f"Dashboard for {user_id}: score={total_score}, rank={rank}, total={len(all_scores)}")
+
+        similarity_ranked = self.get_similarity_ranked_users(user_id)
+
+        # Top 3 most similar users (regardless of mentor/mentee role)
+        top_3_ids = [r["user_id"] for r in similarity_ranked[:3]]
+
+        # Batch fetch profiles + activity for top 3
+        all_ids      = list({r["user_id"] for r in similarity_ranked[:10]})
+        profiles_map = self._fetch_profiles_map(all_ids)
+
+        def enrich(records: list, include_activity=False) -> list:
+            enriched = []
+            for r in records:
+                profile  = profiles_map.get(r["user_id"], {})
+                entry = {
+                    **r,
+                    "username":   profile.get("username", r["user_id"][:8]),
+                    "avatar_url": profile.get("avatar_url"),
+                }
+                if include_activity:
+                    entry["activity"] = self.get_user_activity(r["user_id"])
+                enriched.append(entry)
+            return enriched
+
+        # top_similar: top 3 by match_pct, with full activity for the path view
+        top_similar = enrich(similarity_ranked[:3], include_activity=True)
+
+        mentors = enrich([r for r in similarity_ranked if r["role"] == "mentor"][:5])
+        mentees = enrich([r for r in similarity_ranked if r["role"] == "mentee"][:5])
+
+        return {
+            "total_score": total_score,
+            "rank":        rank,
+            "total_users": len(all_scores),
+            "top_similar": top_similar,   # NEW — used for the default panel
+            "mentors":     mentors,
+            "mentees":     mentees,
+        }
+
+    # ════════════════════════════════════════════════════════════════════════
+    # SECTION 6 — LEADERBOARD
+    # ════════════════════════════════════════════════════════════════════════
+
+    async def get_leaderboard(self, top_k: int = 50, requesting_user_id: str = None) -> list:
+        """
+        Returns top_k users by score.
+        If requesting_user_id is provided, each entry also includes:
+          similarity_to_me — Jaccard match% vs the requesting user
+        """
+        all_scores   = self.get_all_user_scores()
+        sorted_users = sorted(all_scores.items(), key=lambda x: x[1], reverse=True)
+
+        if not sorted_users:
+            return []
+
+        top_ids      = [uid for uid, _ in sorted_users[:top_k]]
+        profiles_map = self._fetch_profiles_map(top_ids)
+
+        all_clubs = self._get_all_club_sets()
+        all_cats  = self._get_all_category_sets()
+
+        my_interests = set()
+        if requesting_user_id:
+            my_interests = (all_clubs.get(requesting_user_id, set()) |
+                            all_cats.get(requesting_user_id, set()))
+
+        results = []
+        for rank_idx, (uid, score) in enumerate(sorted_users[:top_k]):
+            profile = profiles_map.get(uid, {})
+
+            match_pct = None
+            if requesting_user_id and uid != requesting_user_id:
+                other_interests = all_clubs.get(uid, set()) | all_cats.get(uid, set())
+                sim = self._jaccard(my_interests, other_interests)
+                match_pct = round(sim * 100)
+                # fallback when no interests at all
+                if not my_interests and not other_interests:
+                    score_diff = abs(all_scores.get(requesting_user_id, 0) - score)
+                    max_score  = max(all_scores.get(requesting_user_id, 0), score, 1)
+                    match_pct  = max(10, round((1 - score_diff / max_score) * 100))
+
+            # Diversity multiplier
+            match_count = sum(
+                1 for other_uid, _ in sorted_users
+                if other_uid != uid and
+                self._jaccard(
+                    all_clubs.get(uid, set()) | all_cats.get(uid, set()),
+                    all_clubs.get(other_uid, set()) | all_cats.get(other_uid, set())
+                ) >= 0.10
+            )
+            diversity_multiplier = 1 + min(match_count * 0.05, 0.5)
+            final_score          = round(score * diversity_multiplier, 1)
+
+            results.append({
+                "rank":                 rank_idx + 1,
+                "user_id":              uid,
+                "username":             profile.get("username", uid[:8]),
+                "avatar_url":           profile.get("avatar_url"),
+                "total_score":          final_score,
+                "base_score":           score,
+                "match_count":          match_count,
+                "similarity_to_me":     match_pct,   # NEW
+                "diversity_multiplier": round(diversity_multiplier, 2),
+            })
+
+        return results
+
+
+
+
+
+
+"""
+TuneIn Scoring Service
+"""
+
+# import asyncio
+# import logging
+# import os
+# import time
+# from dataclasses import dataclass, field
+# from typing import Optional
+# from functools import partial
+
+# from supabase import create_client, Client as SupabaseClient
+
+# logger = logging.getLogger(__name__)
+
+# # ── Supabase singleton ────────────────────────────────────────────────────────
+# _supabase_client: SupabaseClient = None
+
+# def get_supabase() -> SupabaseClient:
+#     global _supabase_client
+#     if _supabase_client is None:
+#         _supabase_client = create_client(
+#             os.environ["SUPABASE_URL"],
+#             os.environ["SUPABASE_SERVICE_KEY"],
+#         )
+#     return _supabase_client
+
+# @dataclass
+# class HGTConfig:
+#     weight_likes:  float = 0.40
+#     weight_clubs:  float = 0.35
+#     weight_hgt:    float = 0.25
+
+# class ScoringService:
+#     def __init__(self, neo4j_uri="", neo4j_user="", neo4j_password="", config=None, cache_ttl=300):
+#         self._config         = config or HGTConfig()
+#         self._cache_ttl      = cache_ttl
+#         self.supabase        = get_supabase()
+#         self._scores_cache: dict  = {}
+#         self._scores_built_at: float = 0.0
+#         self._scores_ttl: int = 120
+
+#     def _discover_all_user_ids(self) -> set:
+#         sb = self.supabase
+#         sources = []
+#         try:
+#             r = sb.table("profiles").select("id").execute().data or []
+#             sources.extend(row["id"] for row in r if row.get("id"))
+#         except Exception as e:
+#             logger.warning(f"profiles fetch failed: {e}")
+
+#         for table in ["club_members", "post_reactions", "strava_stats",
+#                        "github_stats", "movie_reviews", "game_reviews"]:
+#             try:
+#                 r = sb.table(table).select("user_id").execute().data or []
+#                 sources.extend(row["user_id"] for row in r if row.get("user_id"))
+#             except Exception as e:
+#                 logger.warning(f"{table} user_id fetch failed: {e}")
+#         return set(sources)
+
+#     def get_all_user_scores(self) -> dict:
+#         if self._scores_cache and (time.time() - self._scores_built_at) < self._scores_ttl:
+#             return self._scores_cache
+
+#         sb = self.supabase
+
+#         # Using inline try-except handler helper due to length
+#         def safe_query(table, cols, eq_col=None, eq_val=None):
+#             try:
+#                 q = sb.table(table).select(cols)
+#                 if eq_col: q = q.eq(eq_col, eq_val)
+#                 return q.execute().data or []
+#             except Exception: return []
+
+#         likes_rows = safe_query("post_reactions", "user_id", "reaction", "like")
+#         clubs_rows = safe_query("club_members", "user_id")
+#         strava_rows = safe_query("strava_stats", "user_id, total_distance_km")
+#         github_rows = safe_query("github_stats", "user_id, total_commits, streak_days")
+#         movie_rows = safe_query("movie_reviews", "user_id")
+#         game_rows = safe_query("game_reviews", "user_id")
+
+#         likes_count, clubs_count, strava_map, github_map, movie_count, game_count = {}, {}, {}, {}, {}, {}
+
+#         # ... (the rest of your logic remains exactly the same)
+#         # Using inline try-except handler helper due to length
+#         def safe_query(table, cols, eq_col=None, eq_val=None):
+#             try:
+#                 q = sb.table(table).select(cols)
+#                 if eq_col: q = q.eq(eq_col, eq_val)
+#                 return q.execute().data or []
+#             except Exception: return []
+
+#         likes_rows = safe_query("post_reactions", "user_id", "reaction", "like")
+#         clubs_rows = safe_query("club_members", "user_id")
+#         strava_rows = safe_query("strava_stats", "user_id, total_distance_km")
+#         github_rows = safe_query("github_stats", "user_id, total_commits, streak_days")
+#         movie_rows = safe_query("movie_reviews", "user_id")
+#         game_rows = safe_query("game_reviews", "user_id")
+
+#         likes_count, clubs_count, strava_map, github_map, movie_count, game_count = {}, {}, {}, {}, {}, {}
+
+#         for r in likes_rows: likes_count[r["user_id"]] = likes_count.get(r["user_id"], 0) + 1
+#         for r in clubs_rows: clubs_count[r["user_id"]] = clubs_count.get(r["user_id"], 0) + 1
+#         for r in strava_rows: strava_map[r["user_id"]] = {"connected": True, "km": float(r.get("total_distance_km") or 0)}
+#         for r in github_rows: github_map[r["user_id"]] = {"commits": int(r.get("total_commits") or 0), "streak": int(r.get("streak_days") or 0)}
+#         for r in movie_rows: movie_count[r["user_id"]] = movie_count.get(r["user_id"], 0) + 1
+#         for r in game_rows: game_count[r["user_id"]] = game_count.get(r["user_id"], 0) + 1
+
+#         all_uids = self._discover_all_user_ids()
+#         all_uids |= set(likes_count) | set(clubs_count) | set(strava_map) | set(github_map) | set(movie_count) | set(game_count)
+
+#         scores = {}
+#         for uid in all_uids:
+#             score = 0.0
+#             score += likes_count.get(uid, 0) * 2.0
+#             score += clubs_count.get(uid, 0) * 15.0
+#             if uid in strava_map:
+#                 score += 10.0 + (strava_map[uid]["km"] * 0.5)
+#             gh = github_map.get(uid, {})
+#             score += gh.get("commits", 0) * 1.0 + gh.get("streak", 0) * 5.0
+#             score += movie_count.get(uid, 0) * 3.0 + game_count.get(uid, 0) * 3.0
+#             scores[uid] = round(score, 1)
+
+#         self._scores_cache = scores
+#         self._scores_built_at = time.time()
+#         return scores
+
+#     def invalidate_scores_cache(self):
+#         self._scores_cache = {}
+#         self._scores_built_at = 0.0
+
+#     def _get_all_club_sets(self) -> dict:
+#         try: rows = self.supabase.table("club_members").select("user_id, clubs(name)").execute().data or []
+#         except Exception: rows = []
+#         res = {}
+#         for r in rows:
+#             name = (r.get("clubs") or {}).get("name", "")
+#             if name: res.setdefault(r["user_id"], set()).add(name.lower())
+#         return res
+
+#     def _get_all_category_sets(self) -> dict:
+#         try: rows = self.supabase.table("post_reactions").select("user_id, posts(category)").eq("reaction", "like").execute().data or []
+#         except Exception: rows = []
+#         res = {}
+#         for r in rows:
+#             cat = (r.get("posts") or {}).get("category", "")
+#             if cat: res.setdefault(r["user_id"], set()).add(cat.lower())
+#         return res
+
+#     @staticmethod
+#     def _jaccard(a: set, b: set) -> float:
+#         union = a | b
+#         return len(a & b) / len(union) if union else 0.0
+
+#     def get_similarity_ranked_users(self, user_id: str) -> list:
+#         all_scores = self.get_all_user_scores()
+#         my_score = all_scores.get(user_id, 0)
+#         all_clubs, all_cats = self._get_all_club_sets(), self._get_all_category_sets()
+#         my_clubs = all_clubs.get(user_id, set())
+#         my_cats = all_cats.get(user_id, set())
+#         my_interests = my_clubs | my_cats
+
+#         results = []
+#         for other_id, other_score in all_scores.items():
+#             if other_id == user_id: continue
+#             other_clubs = all_clubs.get(other_id, set())
+#             other_cats = all_cats.get(other_id, set())
+#             other_interests = other_clubs | other_cats
+            
+#             sim = self._jaccard(my_interests, other_interests)
+#             match_pct = round(sim * 100)
+#             if not my_interests and not other_interests:
+#                 diff = abs(my_score - other_score)
+#                 match_pct = max(10, round((1 - diff / max(my_score, other_score, 1)) * 100))
+
+#             results.append({
+#                 "user_id": other_id, "score": other_score, "match_pct": match_pct,
+#                 "role": "mentor" if other_score > my_score else "mentee",
+#                 "shared_clubs": list(my_clubs & other_clubs),
+#                 "shared_categories": list(my_cats & other_cats),
+#             })
+#         results.sort(key=lambda x: (x["match_pct"], x["score"]), reverse=True)
+#         return results
+
+#     def get_user_activity(self, target_user_id: str) -> dict:
+#         sb = self.supabase
+#         all_clubs = self._get_all_club_sets()
+        
+#         def safe_q(table, cols, eq_col=None, eq_val=None):
+#             try:
+#                 q = sb.table(table).select(cols)
+#                 if eq_col: q = q.eq(eq_col, eq_val)
+#                 return q.execute().data or []
+#             except Exception: return []
+
+#         return {
+#             "clubs": sorted(list(all_clubs.get(target_user_id, set()))),
+#             "post_likes": safe_q("post_reactions", "posts(title, category)", "user_id", target_user_id),
+#             "strava": (safe_q("strava_stats", "total_distance_km, total_elevation_m, total_moving_time_hrs, score", "user_id", target_user_id) or [None])[0],
+#             "github": (safe_q("github_stats", "username, total_commits, streak_days, score", "user_id", target_user_id) or [None])[0],
+#             "movie_reviews": safe_q("movie_reviews", "*", "user_id", target_user_id),
+#             "game_reviews": safe_q("game_reviews", "*", "user_id", target_user_id),
+#             "hgt_score": self.get_all_user_scores().get(target_user_id, 0),
+#         }
+
+#     def _fetch_profiles_map(self, user_ids: list) -> dict:
+#         if not user_ids: return {}
+#         try:
+#             rows = self.supabase.table("profiles").select("id, username, avatar_url").in_("id", user_ids).execute().data or []
+#             result = {r["id"]: r for r in rows}
+#             for uid in user_ids:
+#                 if uid not in result: result[uid] = {"id": uid, "username": uid[:8], "avatar_url": None}
+#             return result
+#         except Exception:
+#             return {uid: {"id": uid, "username": uid[:8], "avatar_url": None} for uid in user_ids}
+
+#     async def get_user_dashboard(self, user_id: str) -> dict:
+#         all_scores = self.get_all_user_scores()
+#         sorted_users = sorted(all_scores.items(), key=lambda x: x[1], reverse=True)
+#         rank = next((i + 1 for i, (uid, _) in enumerate(sorted_users) if uid == user_id), None)
+        
+#         similarity_ranked = self.get_similarity_ranked_users(user_id)
+#         profiles_map = self._fetch_profiles_map(list({r["user_id"] for r in similarity_ranked[:10]}))
+
+#         def enrich(records, include_activity=False):
+#             enriched = []
+#             for r in records:
+#                 p = profiles_map.get(r["user_id"], {})
+#                 entry = {**r, "username": p.get("username", r["user_id"][:8]), "avatar_url": p.get("avatar_url")}
+#                 if include_activity: entry["activity"] = self.get_user_activity(r["user_id"])
+#                 enriched.append(entry)
+#             return enriched
+
+#         return {
+#             "total_score": all_scores.get(user_id, 0), "rank": rank, "total_users": len(all_scores),
+#             "top_similar": enrich(similarity_ranked[:3], True),
+#             "mentors": enrich([r for r in similarity_ranked if r["role"] == "mentor"][:5]),
+#             "mentees": enrich([r for r in similarity_ranked if r["role"] == "mentee"][:5]),
+#         }
+
+#     async def get_leaderboard(self, top_k: int = 50, requesting_user_id: str = None) -> list:
+#         all_scores = self.get_all_user_scores()
+#         sorted_users = sorted(all_scores.items(), key=lambda x: x[1], reverse=True)
+#         if not sorted_users: return []
+
+#         profiles_map = self._fetch_profiles_map([uid for uid, _ in sorted_users[:top_k]])
+#         all_clubs, all_cats = self._get_all_club_sets(), self._get_all_category_sets()
+
+#         my_clubs = all_clubs.get(requesting_user_id, set()) if requesting_user_id else set()
+#         my_cats = all_cats.get(requesting_user_id, set()) if requesting_user_id else set()
+#         my_interests = my_clubs | my_cats
+
+#         results = []
+#         for rank_idx, (uid, score) in enumerate(sorted_users[:top_k]):
+#             profile = profiles_map.get(uid, {})
+#             other_clubs, other_cats = all_clubs.get(uid, set()), all_cats.get(uid, set())
+            
+#             match_pct = None
+#             shared_clubs, shared_categories = [], []
+            
+#             if requesting_user_id and uid != requesting_user_id:
+#                 other_interests = other_clubs | other_cats
+#                 sim = self._jaccard(my_interests, other_interests)
+#                 match_pct = round(sim * 100)
+#                 if not my_interests and not other_interests:
+#                     diff = abs(all_scores.get(requesting_user_id, 0) - score)
+#                     match_pct = max(10, round((1 - diff / max(all_scores.get(requesting_user_id, 0), score, 1)) * 100))
+                
+#                 shared_clubs = list(my_clubs & other_clubs)
+#                 shared_categories = list(my_cats & other_cats)
+
+#             match_count = sum(1 for ouid, _ in sorted_users if ouid != uid and self._jaccard(
+#                 all_clubs.get(uid, set()) | all_cats.get(uid, set()),
+#                 all_clubs.get(ouid, set()) | all_cats.get(ouid, set())
+#             ) >= 0.10)
+            
+#             div_mult = 1 + min(match_count * 0.05, 0.5)
+
+#             results.append({
+#                 "rank": rank_idx + 1,
+#                 "user_id": uid,
+#                 "username": profile.get("username", uid[:8]),
+#                 "avatar_url": profile.get("avatar_url"),
+#                 "total_score": round(score * div_mult, 1),
+#                 "similarity_to_me": match_pct,
+#                 "shared_clubs": shared_clubs,             # <--- UI NEEDS THIS
+#                 "shared_categories": shared_categories,   # <--- UI NEEDS THIS
+#                 "activity": self.get_user_activity(uid)   # <--- UI NEEDS THIS to draw the path!
+#             })
+
+#         return results
