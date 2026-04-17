@@ -15,6 +15,9 @@ import Profile from "./pages/Profile";
 import Leaderboard from "./pages/Leaderboard"; 
 import TuneInDashboard from "./pages/TuneInDashboard.tsx";
 
+// <-- Added AccountSettings Import -->
+import AccountSettings from "./pages/AccountSettings"; 
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -68,6 +71,16 @@ const App = () => (
             element={
               <AuthGuard>
                 <Leaderboard />
+              </AuthGuard>
+            }
+          />
+
+          {/* <-- Added Account Settings Route --> */}
+          <Route
+            path="/settings"
+            element={
+              <AuthGuard>
+                <AccountSettings />
               </AuthGuard>
             }
           />

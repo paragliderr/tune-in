@@ -24,7 +24,8 @@ import {
   Loader2,
   TrendingUp,
   Activity,
-  User as UserIcon
+  User as UserIcon,
+  Settings // Added Settings icon
 } from "lucide-react";
 
 // Components from your old file
@@ -206,11 +207,6 @@ export default function UserProfile() {
 
   // ── Reactive Identity Check ────────────────────────────────────────────────
   useEffect(() => {
-    console.log("[IDENTITY_CHECK]", {
-      currentUserId,
-      profileId: profile?.id,
-      matching: currentUserId === profile?.id
-    });
     if (profile && currentUserId) {
       setIsOwnProfile(currentUserId === profile.id);
     } else {
@@ -702,7 +698,7 @@ export default function UserProfile() {
 
   // ── Helper: Navigate to messages ───────────────────────────────────────────
   const navigateToMessages = (targetUsername: string) => {
-    window.location.href = `http://localhost:8080/messages/${targetUsername}`;
+    navigate(`/messages/${targetUsername}`);
   };
 
   if (loading) {
@@ -731,8 +727,8 @@ export default function UserProfile() {
         </button>
         <span className="text-sm font-semibold truncate">@{profile.username}</span>
         <div className="ml-auto flex gap-2">
-          {/* Message button — always visible when logged in (for other profiles AND own profile) */}
-          {currentUserId && (
+          {/* Message button — only visible if logged in and NOT viewing own profile */}
+          {currentUserId && !isOwnProfile && (
             <button
               onClick={() => navigateToMessages(profile.username)}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all"
@@ -742,12 +738,14 @@ export default function UserProfile() {
               <span className="hidden sm:inline">Message</span>
             </button>
           )}
+          {/* Settings button — only visible if viewing OWN profile */}
           {isOwnProfile && (
             <button
-              onClick={() => navigate("/settings/profile")}
-              className="px-4 py-1.5 rounded-lg text-sm border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all"
+              onClick={() => navigate("/settings")}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm border border-border text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all"
             >
-              Settings
+              <Settings size={14} />
+              <span className="hidden sm:inline">Settings</span>
             </button>
           )}
         </div>
@@ -1790,4 +1788,4 @@ export default function UserProfile() {
       </AnimatePresence>
     </div>
   );
-}
+} 
