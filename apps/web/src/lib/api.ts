@@ -46,7 +46,8 @@ export async function createPostViaApi(payload: {
   user_id: string;
   image_url?: string | null;
 }): Promise<{ status: string; post_id: string; message?: string }> {
-  const res = await fetch(apiUrl("/posts/"), {
+  // 👇 FIXED: Added /api prefix and removed the strict trailing slash
+  const res = await fetch(apiUrl("/api/posts"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -70,7 +71,6 @@ export async function fetchTrendingFeed(
   feed: Record<string, unknown>[];
   message?: string;
 }> {
-  // 👇 Added /api right here!
   const res = await fetch(apiUrl(`/api/feed/${userId}?limit=${limit}`), {
     method: "GET",
     headers: { "Content-Type": "application/json" },
@@ -98,7 +98,8 @@ export const fetchPersonalizedFeed = fetchTrendingFeed;
 
 export async function trackFeedLike(userId: string, postId: string): Promise<void> {
   try {
-    await fetch(apiUrl("/feed/track-like"), {
+    // 👇 FIXED: Added /api prefix here as well to prevent future 404s
+    await fetch(apiUrl("/api/feed/track-like"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user_id: userId, post_id: postId }),
