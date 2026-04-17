@@ -1,22 +1,22 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 export default function useGlobalPresence() {
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
-  const channelRef = useRef<any>(null);
-  const joinedRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
+    let channel: any = null;
+    let cleanupVisibility: (() => void) | null = null;
 
     const init = async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (!user || joinedRef.current) return;
+      if (!user || !mounted) return;
 
-      const channel = supabase.channel("global-online", {
+      channel = supabase.channel("global-online", {
         config: {
           presence: {
             key: user.id,
@@ -26,6 +26,7 @@ export default function useGlobalPresence() {
 
       channel
         .on("presence", { event: "sync" }, () => {
+          if (!mounted) return;
           const state = channel.presenceState();
           const ids = new Set<string>();
 
@@ -35,10 +36,10 @@ export default function useGlobalPresence() {
             }
           });
 
-          if (mounted) setOnlineUserIds(ids);
+          setOnlineUserIds(ids);
         })
         .subscribe(async (status: any) => {
-          if (status === "SUBSCRIBED") {
+          if (status === "SUBSCRIBED" && mounted) {
             await channel.track({
               online_at: new Date().toISOString(),
               last_seen: new Date().toISOString(),
@@ -46,36 +47,34 @@ export default function useGlobalPresence() {
           }
         });
 
-      channelRef.current = channel;
-      joinedRef.current = true;
-
-      // Track visibility
+      // Track visibility to re-ping when returning to the app
       const handleVisibilityChange = async () => {
-        if (document.visibilityState === 'visible') {
-          await channel.track({
-            online_at: new Date().toISOString(),
-            last_seen: new Date().toISOString(),
-          });
-        } else {
-          // Optional: untrack or stay online for a bit
-          // For now, let's keep track but we could also leave the channel here
+        if (document.visibilityState === 'visible' && channel && mounted) {
+          try {
+            await channel.track({
+              online_at: new Date().toISOString(),
+              last_seen: new Date().toISOString(),
+            });
+          } catch (err) {
+            console.error("Visibility track failed:", err);
+          }
         }
       };
 
       document.addEventListener('visibilitychange', handleVisibilityChange);
       
-      return () => {
+      cleanupVisibility = () => {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
       };
     };
 
-    const cleanup = init();
+    init();
 
     return () => {
       mounted = false;
-      cleanup.then(unsub => unsub?.());
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
+      if (cleanupVisibility) cleanupVisibility();
+      if (channel) {
+        supabase.removeChannel(channel);
       }
     };
   }, []);
