@@ -14,7 +14,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router   = APIRouter(prefix="/api/tune-in")
+router   = APIRouter(prefix="/tune-in")
 security = HTTPBearer()
 
 # ── Singleton ─────────────────────────────────────────────────────────────────
@@ -23,7 +23,22 @@ _scoring_service = None
 def get_scoring_service():
     global _scoring_service
     if _scoring_service is None:
-        from scoring_service import ScoringService
+        import sys
+        import os
+
+        # 1. Get the current directory of tunein.py (apps/api/routers)
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # 2. Point Python to the root "tune-in" folder (3 levels up)
+        root_dir = os.path.abspath(os.path.join(current_dir, "../../.."))
+        
+        # 3. Add both the root and the api folder to Python's searchable path
+        if root_dir not in sys.path:
+            sys.path.append(root_dir)
+            
+        # 4. Now Python can successfully find the services folder!
+        from services.ai_engine.scoring_service import ScoringService
+        
         _scoring_service = ScoringService(
             neo4j_uri=os.getenv("NEO4J_URI", "neo4j://localhost:7687"),
             neo4j_user=os.getenv("NEO4J_USER", "neo4j"),
@@ -31,7 +46,6 @@ def get_scoring_service():
         )
         logger.info("ScoringService singleton created.")
     return _scoring_service
-
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 

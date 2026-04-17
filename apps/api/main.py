@@ -72,15 +72,8 @@ app = FastAPI(
 # =========================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8080",
-        "http://127.0.0.1:8080",
-        "http://localhost:8081",
-        "http://127.0.0.1:8081",
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "https://tune-in-three.vercel.app",
-    ],
+    # This acts as a universal wildcard, accepting your frontend no matter the port/IP
+    allow_origin_regex=".*", 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
