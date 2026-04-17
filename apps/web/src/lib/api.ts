@@ -70,17 +70,22 @@ export async function fetchTrendingFeed(
   feed: Record<string, unknown>[];
   message?: string;
 }> {
-  const res = await fetch(apiUrl(`/feed/${userId}`), {
+  // 👇 Added /api right here!
+  const res = await fetch(apiUrl(`/api/feed/${userId}?limit=${limit}`), {
     method: "GET",
     headers: { "Content-Type": "application/json" },
   });
+  
   const text = await readBodyText(res);
+  
   if (!res.ok) {
     throw new Error(parseErrorDetail(text, res.statusText) || "Feed request failed");
   }
+  
   if (!text.trim()) {
     return { status: "success", feed: [] };
   }
+  
   return JSON.parse(text) as {
     status: string;
     feed: Record<string, unknown>[];
